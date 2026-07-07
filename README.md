@@ -40,6 +40,16 @@ Do not commit real API keys, Memos tokens, Cloudflare Tunnel tokens, or personal
 
 ## Quick Start
 
+### Download a Desktop App
+
+For normal users, download the latest desktop folder package from the GitHub **Releases** page instead of downloading the source code ZIP.
+
+- macOS: download `IdeaHub-mac-*-folder.zip`, unzip it, then double-click `IdeaHub.app`.
+- Windows: download `IdeaHub-windows-x64-folder.zip`, unzip it, then double-click `IdeaHub.exe` inside `win-unpacked`.
+- Linux: download `IdeaHub-linux-x64-folder.tar.gz`, extract it, then run the `ideahub` executable inside `linux-unpacked`.
+
+The source code ZIP is for developers. It does not include `IdeaHub.app` or `IdeaHub.exe`.
+
 ### Browser/PWA Mode
 
 IdeaHub can run with Python only:
