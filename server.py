@@ -20,6 +20,14 @@ MARKER_RE = re.compile(r"<!--\s*ideahub\s*(\{.*?\})\s*-->", re.DOTALL)
 
 CATEGORY_LABELS = {"todo", "plan", "idea", "record", "archive"}
 PRIORITIES = {"high", "medium", "low"}
+PROVIDER_DEFAULTS = {
+    "deepseek": {"baseUrl": "https://api.deepseek.com/v1", "model": "deepseek-v4-flash", "requiresKey": True},
+    "zhipu": {"baseUrl": "https://open.bigmodel.cn/api/paas/v4", "model": "glm-4-flash", "requiresKey": True},
+    "siliconflow": {"baseUrl": "https://api.siliconflow.cn/v1", "model": "Qwen/Qwen3-8B", "requiresKey": True},
+    "dashscope": {"baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1", "model": "qwen-turbo", "requiresKey": True},
+    "openai": {"baseUrl": "https://api.openai.com/v1", "model": "gpt-4.1-mini", "requiresKey": True},
+    "custom": {"baseUrl": "http://localhost:11434/v1", "model": "local-model", "requiresKey": False},
+}
 
 
 def utc_now():
@@ -158,17 +166,16 @@ def normalize_analysis(raw, original_content):
 def model_config(request_config=None):
     request_config = request_config or {}
     provider = env("MODEL_PROVIDER") or request_config.get("provider") or "deepseek"
+    if provider == "local":
+        provider = "deepseek"
     base_url = env("MODEL_BASE_URL") or request_config.get("baseUrl") or ""
     model = env("MODEL_NAME") or request_config.get("model") or ""
     api_key = env("MODEL_API_KEY") or request_config.get("apiKey") or ""
-    if provider == "deepseek" and not base_url:
-        base_url = "https://api.deepseek.com/v1"
-    if provider == "deepseek" and not model:
-        model = "deepseek-v4-flash"
-    if provider == "openai" and not base_url:
-        base_url = "https://api.openai.com/v1"
-    if provider == "openai" and not model:
-        model = "gpt-4.1-mini"
+    defaults = PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["custom"])
+    if not base_url:
+        base_url = defaults["baseUrl"]
+    if not model:
+        model = defaults["model"]
     return {"provider": provider, "baseUrl": base_url, "model": model, "apiKey": api_key}
 
 
@@ -211,7 +218,8 @@ def analyze_content(content, request_config=None):
 def ensure_model_ready(cfg):
     if cfg["provider"] == "local" or not cfg["baseUrl"] or not cfg["model"]:
         raise RuntimeError("请先配置 DeepSeek 或兼容模型接口")
-    if cfg["provider"] in {"deepseek", "openai"} and not cfg["apiKey"]:
+    defaults = PROVIDER_DEFAULTS.get(cfg["provider"], PROVIDER_DEFAULTS["custom"])
+    if defaults["requiresKey"] and not cfg["apiKey"]:
         raise RuntimeError("请先填写 API Key")
 
 
@@ -364,13 +372,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/health":
+            cfg = model_config()
+            defaults = PROVIDER_DEFAULTS.get(cfg["provider"], PROVIDER_DEFAULTS["custom"])
             return self.json(
                 {
                     "ok": True,
                     "store": active_store().name,
                     "memosConfigured": bool(env("MEMOS_BASE_URL") and env("MEMOS_ACCESS_TOKEN")),
-                    "modelConfigured": bool(env("MODEL_API_KEY")),
-                    "modelProvider": model_config().get("provider"),
+                    "modelConfigured": bool(cfg["baseUrl"] and cfg["model"] and (cfg["apiKey"] or not defaults["requiresKey"])),
+                    "modelProvider": cfg["provider"],
                 }
             )
         if parsed.path == "/api/items":

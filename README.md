@@ -138,6 +138,19 @@ MODEL_API_KEY=
 
 You can also configure the provider, base URL, model name, and API key from the app settings dialog.
 
+### Domestic Provider Presets
+
+The settings dialog includes presets for several China-friendly OpenAI-compatible providers:
+
+| Provider | Default model | Base URL | API key / console |
+| --- | --- | --- | --- |
+| DeepSeek | `deepseek-v4-flash` | `https://api.deepseek.com/v1` | [DeepSeek API Keys](https://platform.deepseek.com/api_keys) |
+| Zhipu GLM | `glm-4-flash` | `https://open.bigmodel.cn/api/paas/v4` | [BigModel API Keys](https://bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| SiliconFlow | `Qwen/Qwen3-8B` | `https://api.siliconflow.cn/v1` | [SiliconFlow API Keys](https://cloud.siliconflow.cn/account/ak) |
+| Alibaba Bailian / DashScope | `qwen-turbo` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | [Bailian Console](https://bailian.console.aliyun.com/) |
+
+Free credits and free models change over time. Always check the provider console for the current quota, model availability, and pricing. If a provider changes its recommended model name or workspace URL, edit the **Model** or **Base URL** field in settings.
+
 ## Docker
 
 Start IdeaHub and Memos:

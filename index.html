@@ -288,6 +288,9 @@
               提供方
               <select id="providerSelect">
                 <option value="deepseek">DeepSeek</option>
+                <option value="zhipu">智谱 GLM（免费 Flash）</option>
+                <option value="siliconflow">硅基流动（免费额度）</option>
+                <option value="dashscope">阿里百炼 Qwen（免费额度）</option>
                 <option value="openai">OpenAI</option>
                 <option value="custom">自定义兼容接口</option>
               </select>
@@ -304,6 +307,7 @@
               API Key
               <input id="apiKeyInput" type="password" autocomplete="off" placeholder="保存在本机浏览器" />
             </label>
+            <div id="providerHelp" class="provider-help wide-field"></div>
             <label>
               布局
               <select id="layoutModeSelect">

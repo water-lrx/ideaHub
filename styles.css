@@ -514,6 +514,45 @@ select:focus {
   grid-column: 1 / -1;
 }
 
+.provider-help {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7faf8;
+  padding: 10px 12px;
+}
+
+.provider-help div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.provider-help strong {
+  color: #34424f;
+  font-size: 13px;
+}
+
+.provider-help span {
+  color: #607080;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.provider-help a {
+  flex: 0 0 auto;
+  border: 1px solid #c9d9d0;
+  border-radius: 8px;
+  color: var(--indigo);
+  font-size: 13px;
+  font-weight: 780;
+  padding: 8px 10px;
+  text-decoration: none;
+}
+
 .model-actions {
   justify-content: flex-end;
   margin-top: 14px;
@@ -1393,6 +1432,11 @@ body.screen-mode .dashboard-grid {
   .metric-grid,
   .kanban {
     grid-template-columns: 1fr;
+  }
+
+  .provider-help {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .capture-controls select,

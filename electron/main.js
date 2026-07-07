@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -6,6 +6,14 @@ const path = require("node:path");
 
 const CATEGORY_LABELS = new Set(["todo", "plan", "idea", "record", "archive"]);
 const PRIORITIES = new Set(["high", "medium", "low"]);
+const PROVIDER_DEFAULTS = {
+  deepseek: { baseUrl: "https://api.deepseek.com/v1", model: "deepseek-v4-flash", requiresKey: true },
+  zhipu: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash", requiresKey: true },
+  siliconflow: { baseUrl: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen3-8B", requiresKey: true },
+  dashscope: { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-turbo", requiresKey: true },
+  openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini", requiresKey: true },
+  custom: { baseUrl: "http://localhost:11434/v1", model: "local-model", requiresKey: false },
+};
 
 let mainWindow = null;
 let localServer = null;
@@ -52,14 +60,16 @@ function readConfig() {
   fs.mkdirSync(dataDir(), { recursive: true });
   const defaults = {
     provider: "deepseek",
-    baseUrl: "https://api.deepseek.com/v1",
-    model: "deepseek-v4-flash",
+    baseUrl: PROVIDER_DEFAULTS.deepseek.baseUrl,
+    model: PROVIDER_DEFAULTS.deepseek.model,
     apiKey: "",
   };
   if (!fs.existsSync(configFile())) return defaults;
   try {
     const saved = { ...defaults, ...JSON.parse(fs.readFileSync(configFile(), "utf8") || "{}") };
-    return saved.provider === "local" ? defaults : saved;
+    if (saved.provider === "local") return defaults;
+    if (!PROVIDER_DEFAULTS[saved.provider]) return { ...saved, provider: "custom" };
+    return saved;
   } catch (error) {
     console.error("Failed to read config", error);
     return defaults;
@@ -248,14 +258,16 @@ function ensureModelReady(config) {
   if (!config.provider || config.provider === "local" || !config.baseUrl || !config.model) {
     throw new Error("请先配置 DeepSeek 或兼容模型接口");
   }
-  if (["deepseek", "openai"].includes(config.provider) && !config.apiKey) {
+  const defaults = PROVIDER_DEFAULTS[config.provider] || PROVIDER_DEFAULTS.custom;
+  if (defaults.requiresKey && !config.apiKey) {
     throw new Error("请先填写 API Key");
   }
 }
 
 function isModelConfigured(config) {
   if (!config.provider || config.provider === "local" || !config.baseUrl || !config.model) return false;
-  return !["deepseek", "openai"].includes(config.provider) || Boolean(config.apiKey);
+  const defaults = PROVIDER_DEFAULTS[config.provider] || PROVIDER_DEFAULTS.custom;
+  return !defaults.requiresKey || Boolean(config.apiKey);
 }
 
 function readBody(request) {
@@ -463,6 +475,18 @@ async function createWindow() {
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.on("closed", () => {
     mainWindow = null;
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!url.startsWith(`http://127.0.0.1:${port}/`)) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
   });
   await mainWindow.loadURL(`http://127.0.0.1:${port}/`);
 }

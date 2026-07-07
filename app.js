@@ -30,16 +30,55 @@ const PROVIDER_DEFAULTS = {
   deepseek: {
     baseUrl: "https://api.deepseek.com/v1",
     model: "deepseek-v4-flash",
+    label: "DeepSeek",
+    apiKeyUrl: "https://platform.deepseek.com/api_keys",
+    note: "推荐默认服务商。打开链接创建 API Key 后粘贴到下方。",
+    requiresKey: true,
+  },
+  zhipu: {
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    model: "glm-4-flash",
+    label: "智谱 GLM",
+    apiKeyUrl: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
+    note: "适合想先试用免费 Flash 模型的用户，额度和免费模型以智谱控制台为准。",
+    requiresKey: true,
+  },
+  siliconflow: {
+    baseUrl: "https://api.siliconflow.cn/v1",
+    model: "Qwen/Qwen3-8B",
+    label: "硅基流动",
+    apiKeyUrl: "https://cloud.siliconflow.cn/account/ak",
+    note: "聚合多种国产和开源模型，常见免费额度或免费模型以控制台为准。",
+    requiresKey: true,
+  },
+  dashscope: {
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: "qwen-turbo",
+    label: "阿里百炼 Qwen",
+    apiKeyUrl: "https://bailian.console.aliyun.com/",
+    note: "百炼支持 OpenAI 兼容模式；新控制台若要求 Workspace URL，请按页面提示替换 Base URL。",
+    requiresKey: true,
   },
   openai: {
     baseUrl: "https://api.openai.com/v1",
     model: "gpt-4.1-mini",
+    label: "OpenAI",
+    apiKeyUrl: "https://platform.openai.com/api-keys",
+    note: "适合已有 OpenAI API Key 的用户。",
+    requiresKey: true,
   },
   custom: {
     baseUrl: "http://localhost:11434/v1",
     model: "local-model",
+    label: "自定义接口",
+    apiKeyUrl: "",
+    note: "用于 Ollama、LM Studio 或其他 OpenAI 兼容服务；本地服务通常可以不填 API Key。",
+    requiresKey: false,
   },
 };
+
+const PROVIDER_LABELS = Object.fromEntries(Object.entries(PROVIDER_DEFAULTS).map(([key, value]) => [key, value.label]));
+PROVIDER_LABELS.local = "未配置模型";
 
 const sampleItems = [
   {
@@ -123,6 +162,7 @@ const els = {
   modelInput: document.querySelector("#modelInput"),
   baseUrlInput: document.querySelector("#baseUrlInput"),
   apiKeyInput: document.querySelector("#apiKeyInput"),
+  providerHelp: document.querySelector("#providerHelp"),
   layoutModeSelect: document.querySelector("#layoutModeSelect"),
   saveConfigBtn: document.querySelector("#saveConfigBtn"),
   testModelBtn: document.querySelector("#testModelBtn"),
@@ -248,6 +288,7 @@ function bindEvents() {
     const defaults = PROVIDER_DEFAULTS[provider];
     els.baseUrlInput.value = defaults.baseUrl;
     els.modelInput.value = defaults.model;
+    renderProviderHelp(provider);
   });
 
   els.saveConfigBtn.addEventListener("click", async () => {
@@ -537,7 +578,7 @@ function assertModelReady() {
   if (!config.provider || config.provider === "local" || !config.baseUrl || !config.model) {
     throw new Error("请先在模型设置中配置 DeepSeek 或兼容接口");
   }
-  if (["deepseek", "openai"].includes(config.provider) && !config.apiKey) {
+  if (providerRequiresApiKey(config.provider) && !config.apiKey) {
     throw new Error("请先填写 API Key");
   }
 }
@@ -693,28 +734,37 @@ function renderStagedBuffer() {
 
 function renderModelStatus() {
   const { provider, apiKey, baseUrl, model } = state.config;
-  const providerText = {
-    deepseek: "DeepSeek",
-    openai: "OpenAI",
-    custom: "自定义接口",
-    local: "未配置模型",
-  }[provider];
+  const providerText = PROVIDER_LABELS[provider] || "自定义接口";
   if (state.backend.available && state.backend.modelConfigured) {
     els.modelStatus.textContent = `服务端模型 · ${providerText}`;
     return;
   }
-  const ready = provider === "custom" ? Boolean(baseUrl && model) : Boolean(apiKey && baseUrl && model);
+  const ready = providerRequiresApiKey(provider) ? Boolean(apiKey && baseUrl && model) : Boolean(baseUrl && model);
   els.modelStatus.textContent = provider === "local" || !ready ? "未配置模型" : providerText;
+}
+
+function renderProviderHelp(provider = state.config.provider) {
+  if (!els.providerHelp) return;
+  const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.custom;
+  const link = defaults.apiKeyUrl
+    ? `<a href="${escapeHtml(defaults.apiKeyUrl)}" target="_blank" rel="noreferrer">获取 API Key</a>`
+    : "";
+  els.providerHelp.innerHTML = `
+    <div>
+      <strong>${escapeHtml(defaults.label)}</strong>
+      <span>${escapeHtml(defaults.note)}</span>
+    </div>
+    ${link}
+  `;
+}
+
+function providerRequiresApiKey(provider) {
+  return Boolean((PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.custom).requiresKey);
 }
 
 function renderModelTestResult(status, payload = {}) {
   if (!els.modelTestResult) return;
-  const providerText = {
-    deepseek: "DeepSeek",
-    openai: "OpenAI",
-    custom: "自定义接口",
-    local: "未配置模型",
-  }[state.config.provider];
+  const providerText = PROVIDER_LABELS[state.config.provider] || "自定义接口";
 
   els.modelTestResult.className = `model-test-result ${status}`;
   if (status === "running") {
@@ -857,14 +907,9 @@ function renderCalendarSelection() {
 
 function classifierModeLabel() {
   const config = state.config;
-  const providerText = {
-    deepseek: "DeepSeek",
-    openai: "OpenAI",
-    custom: "自定义接口",
-    local: "未配置模型",
-  }[config.provider] || "未配置模型";
+  const providerText = PROVIDER_LABELS[config.provider] || "未配置模型";
   if (config.provider === "local") return "未配置模型";
-  const needsKey = ["deepseek", "openai"].includes(config.provider);
+  const needsKey = providerRequiresApiKey(config.provider);
   if (!config.baseUrl || !config.model || (needsKey && !config.apiKey)) return "未配置模型（配置不完整）";
   return providerText;
 }
@@ -1321,6 +1366,7 @@ function hydrateConfigForm() {
   els.modelInput.value = state.config.model;
   els.apiKeyInput.value = state.config.apiKey;
   els.layoutModeSelect.value = state.ui.layoutMode;
+  renderProviderHelp(state.config.provider);
   renderModelStatus();
 }
 
@@ -1370,7 +1416,9 @@ async function persistStaged() {
 function loadConfig() {
   try {
     const saved = { ...DEFAULT_CONFIG, ...JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}") };
-    return saved.provider === "local" ? DEFAULT_CONFIG : saved;
+    if (saved.provider === "local") return DEFAULT_CONFIG;
+    if (!PROVIDER_DEFAULTS[saved.provider]) return { ...saved, provider: "custom" };
+    return saved;
   } catch (error) {
     console.warn("Failed to load config", error);
     return DEFAULT_CONFIG;

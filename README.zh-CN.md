@@ -138,6 +138,19 @@ MODEL_API_KEY=
 
 也可以直接在应用的设置弹窗中配置服务商、Base URL、模型名称和 API Key。
 
+### 国内模型平台预设
+
+设置弹窗内置了几个国内访问相对友好的 OpenAI 兼容平台预设：
+
+| 平台 | 默认模型 | Base URL | API Key / 控制台 |
+| --- | --- | --- | --- |
+| DeepSeek | `deepseek-v4-flash` | `https://api.deepseek.com/v1` | [DeepSeek API Keys](https://platform.deepseek.com/api_keys) |
+| 智谱 GLM | `glm-4-flash` | `https://open.bigmodel.cn/api/paas/v4` | [BigModel API Keys](https://bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| 硅基流动 | `Qwen/Qwen3-8B` | `https://api.siliconflow.cn/v1` | [SiliconFlow API Keys](https://cloud.siliconflow.cn/account/ak) |
+| 阿里百炼 / DashScope | `qwen-turbo` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | [百炼控制台](https://bailian.console.aliyun.com/) |
+
+免费额度和免费模型会随平台策略变化。请以对应控制台显示为准。如果平台调整了推荐模型名或 Workspace URL，可以直接在设置里修改 **模型** 或 **Base URL**。
+
 ## Docker
 
 启动 IdeaHub 和 Memos：
