@@ -164,7 +164,7 @@ def model_config(request_config=None):
     if provider == "deepseek" and not base_url:
         base_url = "https://api.deepseek.com/v1"
     if provider == "deepseek" and not model:
-        model = "deepseek-chat"
+        model = "deepseek-v4-flash"
     if provider == "openai" and not base_url:
         base_url = "https://api.openai.com/v1"
     if provider == "openai" and not model:

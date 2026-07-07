@@ -123,7 +123,7 @@ DeepSeek-compatible configuration:
 ```text
 MODEL_PROVIDER=deepseek
 MODEL_BASE_URL=https://api.deepseek.com/v1
-MODEL_NAME=deepseek-chat
+MODEL_NAME=deepseek-v4-flash
 MODEL_API_KEY=your_api_key
 ```
 

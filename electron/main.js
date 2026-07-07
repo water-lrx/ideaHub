@@ -53,7 +53,7 @@ function readConfig() {
   const defaults = {
     provider: "deepseek",
     baseUrl: "https://api.deepseek.com/v1",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
     apiKey: "",
   };
   if (!fs.existsSync(configFile())) return defaults;

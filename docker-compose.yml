@@ -9,7 +9,7 @@ services:
       PORT: 5173
       MODEL_PROVIDER: ${MODEL_PROVIDER:-deepseek}
       MODEL_BASE_URL: ${MODEL_BASE_URL:-https://api.deepseek.com/v1}
-      MODEL_NAME: ${MODEL_NAME:-deepseek-chat}
+      MODEL_NAME: ${MODEL_NAME:-deepseek-v4-flash}
       MODEL_API_KEY: ${MODEL_API_KEY:-}
       MEMOS_BASE_URL: ${MEMOS_BASE_URL:-http://memos:5230}
       MEMOS_ACCESS_TOKEN: ${MEMOS_ACCESS_TOKEN:-}

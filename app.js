@@ -22,14 +22,14 @@ const CATEGORY_COLORS = {
 const DEFAULT_CONFIG = {
   provider: "deepseek",
   baseUrl: "https://api.deepseek.com/v1",
-  model: "deepseek-chat",
+  model: "deepseek-v4-flash",
   apiKey: "",
 };
 
 const PROVIDER_DEFAULTS = {
   deepseek: {
     baseUrl: "https://api.deepseek.com/v1",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
   },
   openai: {
     baseUrl: "https://api.openai.com/v1",
