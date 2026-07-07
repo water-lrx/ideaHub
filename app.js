@@ -2,6 +2,7 @@ const STORAGE_KEY = "ideahub.items.v1";
 const STAGED_KEY = "ideahub.staged.v1";
 const CONFIG_KEY = "ideahub.config.v1";
 const UI_CONFIG_KEY = "ideahub.ui.v1";
+const SYSTEM_DARK_QUERY = window.matchMedia?.("(prefers-color-scheme: dark)");
 
 const CATEGORY_LABELS = {
   todo: "代办",
@@ -164,6 +165,7 @@ const els = {
   apiKeyInput: document.querySelector("#apiKeyInput"),
   providerHelp: document.querySelector("#providerHelp"),
   layoutModeSelect: document.querySelector("#layoutModeSelect"),
+  themeModeSelect: document.querySelector("#themeModeSelect"),
   saveConfigBtn: document.querySelector("#saveConfigBtn"),
   testModelBtn: document.querySelector("#testModelBtn"),
   modelTestResult: document.querySelector("#modelTestResult"),
@@ -294,6 +296,7 @@ function bindEvents() {
   els.saveConfigBtn.addEventListener("click", async () => {
     state.config = readConfigForm();
     state.ui.layoutMode = els.layoutModeSelect.value === "nav" ? "nav" : "single";
+    state.ui.themeMode = normalizeThemeMode(els.themeModeSelect.value);
     if (state.ui.layoutMode !== "nav") state.ui.activeView = "capture";
     persistConfig();
     persistUiConfig();
@@ -426,6 +429,14 @@ function bindEvents() {
     els.installBtn.hidden = true;
     showToast("IdeaHub 已安装到设备");
   });
+  if (SYSTEM_DARK_QUERY) {
+    SYSTEM_DARK_QUERY.addEventListener("change", () => {
+      if (state.ui.themeMode === "system") {
+        applyThemeMode();
+        drawChart();
+      }
+    });
+  }
   window.addEventListener("online", updateConnectionStatus);
   window.addEventListener("offline", updateConnectionStatus);
   els.modalCloseBtn.addEventListener("click", closeDetailModal);
@@ -681,6 +692,7 @@ function normalizeStagedItem(raw) {
 
 function render() {
   pruneSelection();
+  applyThemeMode();
   applyLayoutMode();
   renderModelStatus();
   renderStagedBuffer();
@@ -690,6 +702,20 @@ function render() {
   renderLists();
   drawChart();
   els.syncHint.textContent = syncText();
+}
+
+function applyThemeMode() {
+  const mode = normalizeThemeMode(state.ui.themeMode);
+  const resolved = mode === "system" ? (SYSTEM_DARK_QUERY?.matches ? "dark" : "light") : mode;
+  state.ui.themeMode = mode;
+  document.documentElement.dataset.theme = resolved;
+  document.documentElement.style.colorScheme = resolved;
+  const themeColor = resolved === "dark" ? "#101918" : "#1d7a55";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColor);
+}
+
+function normalizeThemeMode(value) {
+  return ["light", "dark", "system"].includes(value) ? value : "system";
 }
 
 function applyLayoutMode() {
@@ -1168,19 +1194,20 @@ function drawChart() {
   const chartTop = 28;
   const chartBottom = height - 46;
   const chartHeight = chartBottom - chartTop;
+  const darkChart = document.body.classList.contains("screen-mode") || document.documentElement.dataset.theme === "dark";
 
   categories.forEach((category, index) => {
     const x = gap + index * (barWidth + gap);
     const barHeight = Math.max(8, (values[index] / max) * chartHeight);
     const y = chartBottom - barHeight;
     roundedRect(ctx, x, y, barWidth, barHeight, 8, CATEGORY_COLORS[category]);
-    ctx.fillStyle = document.body.classList.contains("screen-mode") ? "#eef7f2" : "#17202a";
+    ctx.fillStyle = darkChart ? "#eef7f2" : "#17202a";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "700 24px system-ui, sans-serif";
     ctx.fillText(values[index], x + barWidth / 2, y - 14);
     ctx.font = "13px system-ui, sans-serif";
-    ctx.fillStyle = document.body.classList.contains("screen-mode") ? "#a8bdb4" : "#607080";
+    ctx.fillStyle = darkChart ? "#a8bdb4" : "#607080";
     ctx.fillText(CATEGORY_LABELS[category], x + barWidth / 2, chartBottom + 22);
   });
 }
@@ -1347,6 +1374,7 @@ async function importData(event) {
       state.ui = {
         layoutMode: payload.ui.layoutMode === "nav" ? "nav" : "single",
         activeView: ["capture", "calendar", "overview", "dashboard"].includes(payload.ui.activeView) ? payload.ui.activeView : "capture",
+        themeMode: normalizeThemeMode(payload.ui.themeMode),
       };
       persistUiConfig();
     }
@@ -1366,6 +1394,7 @@ function hydrateConfigForm() {
   els.modelInput.value = state.config.model;
   els.apiKeyInput.value = state.config.apiKey;
   els.layoutModeSelect.value = state.ui.layoutMode;
+  els.themeModeSelect.value = normalizeThemeMode(state.ui.themeMode);
   renderProviderHelp(state.config.provider);
   renderModelStatus();
 }
@@ -1435,10 +1464,11 @@ function loadUiConfig() {
     return {
       layoutMode: saved.layoutMode === "nav" ? "nav" : "single",
       activeView: ["capture", "calendar", "overview", "dashboard"].includes(saved.activeView) ? saved.activeView : "capture",
+      themeMode: normalizeThemeMode(saved.themeMode),
     };
   } catch (error) {
     console.warn("Failed to load UI config", error);
-    return { layoutMode: "single", activeView: "capture" };
+    return { layoutMode: "single", activeView: "capture", themeMode: "system" };
   }
 }
 
