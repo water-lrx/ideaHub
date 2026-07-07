@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1d7a55" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="IdeaHub" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>IdeaHub 大屏</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" role="img">
+              <path d="M9 15.8 23.8 7l15 8.8v16.4l-15 8.8L9 32.2V15.8Z" />
+              <path d="M16 20h16M16 27h11M29 27h3" />
+            </svg>
+          </div>
+          <div>
+            <h1>IdeaHub</h1>
+            <p>多端收集 · 智能分类 · 数字大屏</p>
+          </div>
+        </div>
+        <div class="top-actions" aria-label="全局操作">
+          <button id="screenModeBtn" class="toolbar-button icon-only" type="button" title="切换大屏模式" aria-label="切换大屏模式">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M21 16v3a2 2 0 0 1-2 2h-3" />
+            </svg>
+          </button>
+          <button id="modelSettingsBtn" class="toolbar-button icon-only" type="button" title="设置" aria-label="设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.05.05a2 2 0 1 1-2.83 2.83l-.05-.05A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.07A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.05.05a2 2 0 1 1-2.83-2.83l.05-.05A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.07A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.05-.05a2 2 0 1 1 2.83-2.83l.05.05A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.07A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.05-.05a2 2 0 1 1 2.83 2.83l-.05.05A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.07A1.7 1.7 0 0 0 19.4 15Z" />
+            </svg>
+          </button>
+          <button id="installBtn" class="toolbar-button install-button" type="button" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v10M8 9l4 4 4-4M5 17h14v4H5z" />
+            </svg>
+            <span>安装</span>
+          </button>
+          <button id="exportBtn" class="toolbar-button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+            </svg>
+            <span>导出</span>
+          </button>
+          <label class="toolbar-button import-button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 21V9M7 14l5-5 5 5M5 3h14" />
+            </svg>
+            <span>导入</span>
+            <input id="importFile" type="file" accept="application/json" />
+          </label>
+          <button id="quitAppBtn" class="toolbar-button quit-button" type="button" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+            </svg>
+            <span>退出</span>
+          </button>
+        </div>
+      </header>
+
+      <nav id="appNav" class="app-nav" aria-label="主导航" hidden>
+        <button class="active" type="button" data-view="capture">收集</button>
+        <button type="button" data-view="calendar">日历</button>
+        <button type="button" data-view="overview">概览</button>
+        <button type="button" data-view="dashboard">大屏</button>
+      </nav>
+
+      <section class="workspace-band" aria-label="工作台">
+        <div class="workspace-heading">
+          <div>
+            <span>工作台</span>
+            <h2>收集、暂存、提交</h2>
+          </div>
+          <p>先把原始想法放进缓冲区，攒到合适的时候再交给大模型统一拆分、分类并入库。</p>
+        </div>
+      <section class="command-band" aria-label="信息收集">
+        <form id="captureForm" class="capture-form">
+          <label for="captureInput">收集箱</label>
+          <textarea
+            id="captureInput"
+            rows="5"
+            placeholder="把想法、计划、代办、灵感、会议记录直接丢进来..."
+            required
+          ></textarea>
+          <div class="capture-controls">
+            <button class="primary-button" type="submit">
+              <span aria-hidden="true">＋</span>
+              加入缓冲区
+            </button>
+          </div>
+          <section class="staging-panel" aria-label="想法缓冲区">
+            <div class="module-title">
+              <h2>想法缓冲区</h2>
+              <span id="stageCount">0 条</span>
+            </div>
+            <div class="staging-actions">
+              <button id="commitBufferBtn" class="secondary-button" type="button" disabled>提交入库</button>
+              <button id="clearBufferBtn" class="text-button" type="button" disabled>清空缓冲区</button>
+            </div>
+            <div id="stagingList" class="staging-list"></div>
+          </section>
+        </form>
+
+        <aside class="module module-calendar calendar-quick" aria-label="日志日历">
+          <div class="module-title calendar-title">
+            <h2>日志日历</h2>
+            <div class="calendar-controls" aria-label="日历控制">
+              <button id="calendarPrevBtn" class="calendar-nav" type="button" aria-label="上个月">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+              </button>
+              <button id="calendarTodayBtn" class="text-button" type="button">今天</button>
+              <button id="calendarNextBtn" class="calendar-nav" type="button" aria-label="下个月">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="calendar-headline">
+            <strong id="calendarMonthLabel">2026 年 7 月</strong>
+            <button id="calendarClearBtn" class="text-button" type="button">查看全部</button>
+          </div>
+          <div class="calendar-weekdays" aria-hidden="true">
+            <span>一</span>
+            <span>二</span>
+            <span>三</span>
+            <span>四</span>
+            <span>五</span>
+            <span>六</span>
+            <span>日</span>
+          </div>
+          <div id="calendarGrid" class="calendar-grid" aria-label="记录日历"></div>
+          <div class="calendar-selection">
+            <div class="module-title">
+              <h3 id="calendarSelectedLabel">未选择日期</h3>
+              <div class="calendar-selection-actions">
+                <span id="calendarSelectedCount">0 条</span>
+              </div>
+            </div>
+            <div id="calendarDayList" class="item-stack compact"></div>
+          </div>
+        </aside>
+      </section>
+      </section>
+
+      <div class="section-heading overview-heading">
+        <div>
+          <span>概览</span>
+          <h2>当前信息态势</h2>
+        </div>
+      </div>
+      <section class="metric-grid" aria-label="概览指标">
+        <article class="metric-tile metric-todo">
+          <span>待办</span>
+          <strong id="todoCount">0</strong>
+        </article>
+        <article class="metric-tile metric-plan">
+          <span>计划</span>
+          <strong id="planCount">0</strong>
+        </article>
+        <article class="metric-tile metric-idea">
+          <span>未实现想法</span>
+          <strong id="ideaCount">0</strong>
+        </article>
+        <article class="metric-tile metric-record">
+          <span>有趣记录</span>
+          <strong id="recordCount">0</strong>
+        </article>
+      </section>
+
+      <div class="section-heading dashboard-heading">
+        <div>
+          <span>大屏</span>
+          <h2>分类、推进和时间线</h2>
+        </div>
+        <div class="bulk-actions" aria-label="批量操作">
+          <span id="selectionCount">已选 0 条</span>
+          <button id="selectAllBtn" class="secondary-button" type="button">一键全选</button>
+          <button id="clearSelectionBtn" class="text-button" type="button" disabled>取消选择</button>
+          <button id="deleteSelectedBtn" class="danger-button" type="button" disabled>删除所选</button>
+        </div>
+      </div>
+      <section class="dashboard-grid" aria-label="数字大屏">
+        <section class="module module-chart">
+          <div class="module-title">
+            <h2>分类态势</h2>
+            <select id="filterSelect" aria-label="分类筛选">
+              <option value="all">全部</option>
+              <option value="todo">代办</option>
+              <option value="plan">计划</option>
+              <option value="idea">想法</option>
+              <option value="record">记录</option>
+              <option value="archive">归档</option>
+            </select>
+          </div>
+          <canvas id="categoryChart" width="760" height="320" aria-label="分类统计图"></canvas>
+        </section>
+
+        <section class="module module-list">
+          <div class="module-title">
+            <h2>今日推进</h2>
+            <input id="searchInput" type="search" placeholder="搜索内容、标签、标题" aria-label="搜索" />
+          </div>
+          <div id="priorityList" class="item-stack"></div>
+        </section>
+
+        <section class="module module-columns">
+          <div class="module-title">
+            <h2>分模块看板</h2>
+            <button id="clearDoneBtn" class="text-button" type="button">清理已完成</button>
+          </div>
+          <div class="kanban">
+            <div>
+              <h3>代办</h3>
+              <div id="todoList" class="item-stack compact"></div>
+            </div>
+            <div>
+              <h3>计划</h3>
+              <div id="planList" class="item-stack compact"></div>
+            </div>
+            <div>
+              <h3>想法</h3>
+              <div id="ideaList" class="item-stack compact"></div>
+            </div>
+            <div>
+              <h3>记录</h3>
+              <div id="recordList" class="item-stack compact"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="module module-activity">
+          <div class="module-title">
+            <h2>时间线</h2>
+            <span id="syncHint">本地已保存</span>
+          </div>
+          <div id="timelineList" class="timeline"></div>
+        </section>
+      </section>
+    </main>
+
+    <div id="detailModal" class="detail-modal" aria-hidden="true">
+      <div class="modal-backdrop" data-modal-close></div>
+      <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <header class="modal-head">
+          <div>
+            <span id="modalCategory" class="category-badge">记录</span>
+            <h2 id="modalTitle">详情</h2>
+          </div>
+          <button id="modalCloseBtn" class="modal-close" type="button" aria-label="关闭详情">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <div id="modalMeta" class="modal-meta"></div>
+        <pre id="modalContent" class="modal-content"></pre>
+      </section>
+    </div>
+    <div id="modelModal" class="detail-modal" aria-hidden="true">
+      <div class="modal-backdrop" data-model-close></div>
+      <section class="modal-panel model-modal-panel" role="dialog" aria-modal="true" aria-labelledby="modelModalTitle">
+        <header class="modal-head">
+          <div>
+            <span id="modelStatus" class="status-pill">未配置模型</span>
+            <h2 id="modelModalTitle">设置</h2>
+          </div>
+          <button id="modelModalCloseBtn" class="modal-close" type="button" aria-label="关闭模型设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <div class="model-settings-panel">
+          <div class="settings-grid">
+            <label>
+              提供方
+              <select id="providerSelect">
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+                <option value="custom">自定义兼容接口</option>
+              </select>
+            </label>
+            <label>
+              模型
+              <input id="modelInput" type="text" autocomplete="off" />
+            </label>
+            <label class="wide-field">
+              Base URL
+              <input id="baseUrlInput" type="url" autocomplete="off" />
+            </label>
+            <label class="wide-field">
+              API Key
+              <input id="apiKeyInput" type="password" autocomplete="off" placeholder="保存在本机浏览器" />
+            </label>
+            <label>
+              布局
+              <select id="layoutModeSelect">
+                <option value="single">单页模式</option>
+                <option value="nav">导航栏模式</option>
+              </select>
+            </label>
+          </div>
+          <div class="model-actions">
+            <button id="saveConfigBtn" class="secondary-button" type="button">保存配置</button>
+            <button id="testModelBtn" class="secondary-button" type="button">测试</button>
+          </div>
+          <div id="modelTestResult" class="model-test-result" aria-live="polite">
+            <span>测试结果</span>
+            <p>点击“测试”后会在这里显示模型返回的分类、优先级和标签。</p>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div id="connectionStatus" class="connection-status" role="status" aria-live="polite"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

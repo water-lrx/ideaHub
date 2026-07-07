@@ -1,0 +1,56 @@
+{
+  "name": "IdeaHub",
+  "short_name": "IdeaHub",
+  "description": "多端收集、智能拆分分类和数字大屏",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#edf2ef",
+  "theme_color": "#1d7a55",
+  "categories": ["productivity", "utilities"],
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "快速记录",
+      "short_name": "记录",
+      "description": "直接打开收集箱",
+      "url": "/?focus=capture",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "数字大屏",
+      "short_name": "大屏",
+      "description": "打开信息展示大屏",
+      "url": "/?mode=screen",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

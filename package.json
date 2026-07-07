@@ -1,0 +1,72 @@
+{
+  "name": "ideahub",
+  "version": "0.2.0",
+  "description": "本地优先的私人想法收集、分类和数字大屏桌面应用。",
+  "main": "electron/main.js",
+  "author": "IdeaHub",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "desktop": "electron .",
+    "pack": "electron-builder --dir",
+    "folder:mac": "electron-builder --mac --dir",
+    "folder:win": "electron-builder --win --x64 --dir",
+    "folder:win-arm64": "electron-builder --win --arm64 --dir",
+    "folder:linux": "electron-builder --linux --dir",
+    "folder:all": "electron-builder --mac --win --dir",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac dmg zip",
+    "build:win": "electron-builder --win nsis portable",
+    "build:linux": "electron-builder --linux AppImage deb"
+  },
+  "devDependencies": {
+    "electron": "^32.3.3",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "local.ideahub.app",
+    "productName": "IdeaHub",
+    "asar": true,
+    "files": [
+      "index.html",
+      "styles.css",
+      "app.js",
+      "sw.js",
+      "manifest.webmanifest",
+      "icons/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "icons"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
