@@ -8,6 +8,7 @@ __pycache__/
 node_modules/
 dist/
 release-folders/
+release-upload/
 out/
 release/
 *.log
