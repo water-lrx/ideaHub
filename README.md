@@ -1,5 +1,7 @@
 # IdeaHub
 
+[中文文档](README.zh-CN.md) | English
+
 IdeaHub is a local-first idea inbox and dashboard. It helps you capture messy thoughts first, then commit them into structured records with an OpenAI-compatible model such as DeepSeek, OpenAI, Ollama, or LM Studio.
 
 The core workflow is intentionally simple:
