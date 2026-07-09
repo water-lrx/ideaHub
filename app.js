@@ -20,6 +20,28 @@ const CATEGORY_COLORS = {
   archive: "#607080",
 };
 
+const REPORT_STYLE_LABELS = {
+  summary: "总结汇报",
+  review: "复盘汇报",
+  mentor: "导师汇报",
+  custom: "自定义汇报",
+};
+
+const REPORT_PERIOD_LABELS = {
+  day: "日报",
+  week: "周报",
+  month: "月报",
+  year: "年报",
+  custom: "自定义范围",
+};
+
+const REPORT_TONE_LABELS = {
+  concise: "简洁正式",
+  detailed: "详细完整",
+  academic: "学术导师风",
+  casual: "自然口语",
+};
+
 const DEFAULT_CONFIG = {
   provider: "deepseek",
   baseUrl: "https://api.deepseek.com/v1",
@@ -140,6 +162,8 @@ const state = {
   filter: "all",
   query: "",
   selectedIds: new Set(),
+  lastReport: "",
+  lastReportFilename: "",
   installPrompt: null,
   calendarDate: startOfMonth(new Date()),
   selectedDate: "",
@@ -174,6 +198,19 @@ const els = {
   planCount: document.querySelector("#planCount"),
   ideaCount: document.querySelector("#ideaCount"),
   recordCount: document.querySelector("#recordCount"),
+  reportPeriodSelect: document.querySelector("#reportPeriodSelect"),
+  reportAnchorDate: document.querySelector("#reportAnchorDate"),
+  reportStartDate: document.querySelector("#reportStartDate"),
+  reportEndDate: document.querySelector("#reportEndDate"),
+  reportStyleSelect: document.querySelector("#reportStyleSelect"),
+  reportToneSelect: document.querySelector("#reportToneSelect"),
+  reportCustomPrompt: document.querySelector("#reportCustomPrompt"),
+  reportRangeHint: document.querySelector("#reportRangeHint"),
+  reportItemCount: document.querySelector("#reportItemCount"),
+  reportOutput: document.querySelector("#reportOutput"),
+  generateReportBtn: document.querySelector("#generateReportBtn"),
+  copyReportBtn: document.querySelector("#copyReportBtn"),
+  downloadReportBtn: document.querySelector("#downloadReportBtn"),
   priorityList: document.querySelector("#priorityList"),
   todoList: document.querySelector("#todoList"),
   planList: document.querySelector("#planList"),
@@ -221,6 +258,7 @@ start();
 async function start() {
   initDesktopShell();
   registerPwa();
+  hydrateReportForm();
   hydrateConfigForm();
   bindEvents();
   await bootstrapData();
@@ -341,6 +379,17 @@ function bindEvents() {
     state.filter = els.filterSelect.value;
     render();
   });
+
+  els.reportPeriodSelect.addEventListener("change", () => {
+    syncReportCustomRangeVisibility();
+    updateReportRangeSummary();
+  });
+  [els.reportAnchorDate, els.reportStartDate, els.reportEndDate, els.reportStyleSelect, els.reportToneSelect].forEach((element) => {
+    element.addEventListener("change", updateReportRangeSummary);
+  });
+  els.generateReportBtn.addEventListener("click", generateReport);
+  els.copyReportBtn.addEventListener("click", copyReport);
+  els.downloadReportBtn.addEventListener("click", downloadReport);
 
   els.calendarPrevBtn.addEventListener("click", () => {
     state.calendarDate = addMonths(state.calendarDate, -1);
@@ -699,6 +748,7 @@ function render() {
   renderBulkActions();
   renderMetrics();
   renderCalendar();
+  updateReportRangeSummary();
   renderLists();
   drawChart();
   els.syncHint.textContent = syncText();
@@ -929,6 +979,281 @@ function renderCalendarSelection() {
   renderStack(els.calendarDayList, selectedItems.slice(0, 6), {
     empty: state.selectedDate ? "这一天还没有记录" : "点击日历日期查看当天记录",
   });
+}
+
+function hydrateReportForm() {
+  const today = dateKey(new Date());
+  els.reportAnchorDate.value = today;
+  els.reportStartDate.value = today;
+  els.reportEndDate.value = today;
+  syncReportCustomRangeVisibility();
+  updateReportRangeSummary();
+}
+
+function syncReportCustomRangeVisibility() {
+  const custom = els.reportPeriodSelect.value === "custom";
+  document.querySelectorAll(".report-custom-range").forEach((node) => {
+    node.hidden = !custom;
+  });
+  els.reportAnchorDate.parentElement.hidden = custom;
+}
+
+function updateReportRangeSummary() {
+  if (!els.reportRangeHint) return;
+  try {
+    const range = currentReportRange();
+    const items = reportItemsForRange(range);
+    els.reportRangeHint.textContent = `${range.start} 至 ${range.end}`;
+    els.reportItemCount.textContent = `${items.length} 条记录`;
+  } catch (error) {
+    els.reportRangeHint.textContent = "范围无效";
+    els.reportItemCount.textContent = "0 条记录";
+  }
+}
+
+function currentReportRange() {
+  const period = els.reportPeriodSelect.value;
+  if (period === "custom") {
+    const start = normalizeDueDate(els.reportStartDate.value);
+    const end = normalizeDueDate(els.reportEndDate.value);
+    if (!start || !end || start > end) throw new Error("请选择有效的开始和结束日期");
+    return { period, start, end };
+  }
+
+  const anchor = parseDateKey(els.reportAnchorDate.value || dateKey(new Date()));
+  let startDate = new Date(anchor);
+  let endDate = new Date(anchor);
+  if (period === "week") {
+    const weekday = (anchor.getDay() + 6) % 7;
+    startDate.setDate(anchor.getDate() - weekday);
+    endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+  } else if (period === "month") {
+    startDate = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    endDate = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
+  } else if (period === "year") {
+    startDate = new Date(anchor.getFullYear(), 0, 1);
+    endDate = new Date(anchor.getFullYear(), 11, 31);
+  }
+  return { period, start: dateKey(startDate), end: dateKey(endDate) };
+}
+
+function reportItemsForRange(range) {
+  return state.items
+    .filter((item) => item.category !== "archive")
+    .filter((item) => {
+      const key = calendarDateKey(item);
+      return key >= range.start && key <= range.end;
+    })
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+}
+
+async function generateReport() {
+  let range;
+  let items;
+  try {
+    range = currentReportRange();
+    items = reportItemsForRange(range);
+  } catch (error) {
+    showToast(error.message || "请选择有效汇报范围");
+    return;
+  }
+
+  if (!items.length) {
+    const empty = buildLocalReport(range, items, "所选时间范围内暂无记录。");
+    setReportOutput(empty, reportFilename(range));
+    showToast("所选范围暂无记录，已生成空白汇报模板");
+    return;
+  }
+
+  setBusy(true);
+  els.reportOutput.textContent = "正在生成汇报...";
+  try {
+    let report;
+    if (isConfigReadyForReport()) {
+      report = await generateModelReport(range, items);
+    } else {
+      report = buildLocalReport(range, items, "未配置模型，以下为本地模板汇报。");
+    }
+    setReportOutput(report, reportFilename(range));
+    showToast(`已生成${REPORT_PERIOD_LABELS[range.period] || "汇报"}`);
+  } catch (error) {
+    console.error(error);
+    const fallback = buildLocalReport(range, items, `模型生成失败：${error.message || "未知错误"}。以下为本地模板汇报。`);
+    setReportOutput(fallback, reportFilename(range));
+    showToast("模型生成失败，已生成本地模板汇报");
+  } finally {
+    setBusy(false);
+  }
+}
+
+function isConfigReadyForReport() {
+  const config = state.config;
+  return Boolean(config.provider && config.provider !== "local" && config.baseUrl && config.model && (!providerRequiresApiKey(config.provider) || config.apiKey));
+}
+
+async function generateModelReport(range, items) {
+  await refreshBackendConfig();
+  assertModelReady();
+  const options = {
+    style: els.reportStyleSelect.value,
+    tone: els.reportToneSelect.value,
+    customPrompt: els.reportCustomPrompt.value.trim(),
+  };
+  if (state.backend.available) {
+    const payload = await apiPost("/api/report", { range, items, options, config: state.config });
+    const report = String(payload.report || "").trim();
+    if (!report) throw new Error("模型没有返回汇报内容");
+    return report;
+  }
+  const config = state.config;
+  const response = await fetch(`${trimSlash(config.baseUrl)}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+    },
+    body: JSON.stringify({
+      model: config.model,
+      temperature: 0.2,
+      messages: reportMessages(range, items, options),
+    }),
+  });
+  if (!response.ok) throw new Error(`Model request failed: ${response.status}`);
+  const data = await response.json();
+  const text = (data.choices?.[0]?.message?.content || "").trim();
+  if (!text) throw new Error("模型没有返回汇报内容");
+  return text;
+}
+
+function reportMessages(range, items, options = {}) {
+  const style = options.style || els.reportStyleSelect.value;
+  const tone = options.tone || els.reportToneSelect.value;
+  const custom = String(options.customPrompt || els.reportCustomPrompt.value || "").trim();
+  const content = items.map(reportItemLine).join("\n");
+  const styleInstruction = {
+    summary: "输出一份阶段总结汇报，突出完成事项、重要进展、待跟进事项和下一步计划。",
+    review: "输出一份复盘汇报，包含目标回顾、完成情况、亮点、问题、原因分析、改进动作和下一周期计划。",
+    mentor: "输出一份适合发给导师/上级的汇报，表达清楚研究或工作进展、遇到的问题、需要反馈的点和下一步安排。",
+    custom: custom || "按用户记录生成一份结构清晰的自定义汇报。",
+  }[style];
+
+  return [
+    {
+      role: "system",
+      content:
+        "你是一个严谨的个人工作复盘与汇报助手。你只根据用户给出的记录生成中文汇报，不编造未出现的事实。可以进行归纳、合并和措辞优化。输出 Markdown，结构清晰，可直接复制给他人。",
+    },
+    {
+      role: "user",
+      content: [
+        `汇报周期：${REPORT_PERIOD_LABELS[range.period] || "自定义范围"}`,
+        `日期范围：${range.start} 至 ${range.end}`,
+        `汇报形式：${REPORT_STYLE_LABELS[style] || "汇报"}`,
+        `语言风格：${REPORT_TONE_LABELS[tone] || "简洁正式"}`,
+        custom ? `补充要求：${custom}` : "",
+        `记录数量：${items.length}`,
+        "",
+        "请按以下要求生成：",
+        styleInstruction,
+        "请包含：标题、概览、分类进展、关键事项、问题/风险、下一步计划。若是导师汇报，请额外加入“需要请教/反馈的问题”。",
+        "",
+        "原始记录：",
+        content,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  ];
+}
+
+function reportItemLine(item, index) {
+  const tags = item.tags?.length ? ` 标签：${item.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+  const due = item.dueDate ? ` 日程：${item.dueDate}` : "";
+  return [
+    `${index + 1}. [${CATEGORY_LABELS[item.category] || item.category}/${priorityLabel(item.priority)}${item.status === "done" ? "/已完成" : ""}] ${item.title}`,
+    `   日期：${calendarDateKey(item)} 来源：${item.source}${due}${tags}`,
+    `   摘要：${item.summary}`,
+    `   内容：${trimText(item.content, 360)}`,
+  ].join("\n");
+}
+
+function buildLocalReport(range, items, note = "") {
+  const style = els.reportStyleSelect.value;
+  const title = `${REPORT_PERIOD_LABELS[range.period] || "阶段"}${REPORT_STYLE_LABELS[style] || "汇报"}（${range.start} 至 ${range.end}）`;
+  const active = items.filter((item) => item.status !== "done");
+  const done = items.filter((item) => item.status === "done");
+  const lines = [
+    `# ${title}`,
+    "",
+    note ? `> ${note}` : "",
+    "",
+    "## 概览",
+    `- 记录总数：${items.length}`,
+    `- 已完成：${done.length}`,
+    `- 待推进：${active.length}`,
+    `- 代办：${items.filter(byCategory("todo")).length}`,
+    `- 计划：${items.filter(byCategory("plan")).length}`,
+    `- 想法：${items.filter(byCategory("idea")).length}`,
+    `- 记录：${items.filter(byCategory("record")).length}`,
+    "",
+    "## 关键进展",
+    ...reportBulletLines(items.slice(0, 8)),
+    "",
+    "## 问题与风险",
+    ...reportBulletLines(items.filter((item) => item.priority === "high" || item.category === "todo").slice(0, 6), "暂无明确风险或高优先级事项"),
+    "",
+    "## 下一步计划",
+    ...reportBulletLines(active.filter((item) => ["todo", "plan"].includes(item.category)).slice(0, 6), "暂无待推进计划"),
+  ];
+  if (style === "mentor") {
+    lines.push("", "## 需要请教/反馈的问题", "- 请根据上述进展补充需要导师或上级反馈的问题。");
+  }
+  if (style === "review") {
+    lines.push("", "## 复盘动作", "- 保留有效做法；对未完成事项明确下一步、截止时间和阻塞点。");
+  }
+  return lines.join("\n");
+}
+
+function reportBulletLines(items, empty = "暂无记录") {
+  if (!items.length) return [`- ${empty}`];
+  return items.map((item) => `- **${item.title}**：${item.summary}${item.dueDate ? `（日程 ${item.dueDate}）` : ""}`);
+}
+
+function setReportOutput(text, filename) {
+  state.lastReport = text;
+  state.lastReportFilename = filename;
+  els.reportOutput.textContent = text;
+  els.copyReportBtn.disabled = !text;
+  els.downloadReportBtn.disabled = !text;
+  updateReportRangeSummary();
+}
+
+async function copyReport() {
+  if (!state.lastReport) return;
+  try {
+    await navigator.clipboard.writeText(state.lastReport);
+    showToast("汇报已复制");
+  } catch (error) {
+    console.error(error);
+    showToast("复制失败，可手动选择文本复制");
+  }
+}
+
+function downloadReport() {
+  if (!state.lastReport) return;
+  const blob = new Blob([state.lastReport], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = state.lastReportFilename || "ideahub-report.md";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function reportFilename(range) {
+  const style = els.reportStyleSelect.value;
+  return `ideahub-${range.period}-${style}-${range.start}-${range.end}.md`;
 }
 
 function classifierModeLabel() {
@@ -1276,6 +1601,13 @@ function dateKey(value) {
   return `${year}-${month}-${day}`;
 }
 
+function parseDateKey(value) {
+  const normalized = normalizeDueDate(value);
+  if (!normalized) return new Date();
+  const [year, month, day] = normalized.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function formatDateLabel(key) {
   const [year, month, day] = key.split("-").map(Number);
   return new Intl.DateTimeFormat("zh-CN", {
@@ -1373,7 +1705,7 @@ async function importData(event) {
     if (payload.ui) {
       state.ui = {
         layoutMode: payload.ui.layoutMode === "nav" ? "nav" : "single",
-        activeView: ["capture", "calendar", "overview", "dashboard"].includes(payload.ui.activeView) ? payload.ui.activeView : "capture",
+        activeView: validView(payload.ui.activeView),
         themeMode: normalizeThemeMode(payload.ui.themeMode),
       };
       persistUiConfig();
@@ -1463,13 +1795,17 @@ function loadUiConfig() {
     const saved = JSON.parse(localStorage.getItem(UI_CONFIG_KEY) || "{}");
     return {
       layoutMode: saved.layoutMode === "nav" ? "nav" : "single",
-      activeView: ["capture", "calendar", "overview", "dashboard"].includes(saved.activeView) ? saved.activeView : "capture",
+      activeView: validView(saved.activeView),
       themeMode: normalizeThemeMode(saved.themeMode),
     };
   } catch (error) {
     console.warn("Failed to load UI config", error);
     return { layoutMode: "single", activeView: "capture", themeMode: "system" };
   }
+}
+
+function validView(value) {
+  return ["capture", "calendar", "overview", "report", "dashboard"].includes(value) ? value : "capture";
 }
 
 function persistUiConfig() {
@@ -1518,6 +1854,7 @@ function setBusy(isBusy) {
   els.commitBufferBtn.disabled = isBusy || !state.staged.length;
   els.clearBufferBtn.disabled = isBusy || !state.staged.length;
   els.testModelBtn.disabled = isBusy;
+  els.generateReportBtn.disabled = isBusy;
   els.selectAllBtn.disabled = isBusy || !filteredItems().length;
   els.clearSelectionBtn.disabled = isBusy || !state.selectedIds.size;
   els.deleteSelectedBtn.disabled = isBusy || !state.selectedIds.size;

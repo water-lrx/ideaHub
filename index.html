@@ -71,6 +71,7 @@
         <button class="active" type="button" data-view="capture">收集</button>
         <button type="button" data-view="calendar">日历</button>
         <button type="button" data-view="overview">概览</button>
+        <button type="button" data-view="report">汇报</button>
         <button type="button" data-view="dashboard">大屏</button>
       </nav>
 
@@ -177,6 +178,80 @@
           <span>有趣记录</span>
           <strong id="recordCount">0</strong>
         </article>
+      </section>
+
+      <div class="section-heading report-heading">
+        <div>
+          <span>汇报</span>
+          <h2>按时间范围生成阶段汇报</h2>
+        </div>
+      </div>
+      <section class="report-grid" aria-label="汇报生成">
+        <section class="module report-controls">
+          <div class="module-title">
+            <h2>汇报设置</h2>
+            <span id="reportRangeHint">未选择范围</span>
+          </div>
+          <div class="report-form-grid">
+            <label>
+              周期
+              <select id="reportPeriodSelect">
+                <option value="day">日报</option>
+                <option value="week">周报</option>
+                <option value="month">月报</option>
+                <option value="year">年报</option>
+                <option value="custom">自定义范围</option>
+              </select>
+            </label>
+            <label>
+              基准日期
+              <input id="reportAnchorDate" type="date" />
+            </label>
+            <label class="report-custom-range">
+              开始日期
+              <input id="reportStartDate" type="date" />
+            </label>
+            <label class="report-custom-range">
+              结束日期
+              <input id="reportEndDate" type="date" />
+            </label>
+            <label>
+              汇报形式
+              <select id="reportStyleSelect">
+                <option value="summary">总结汇报</option>
+                <option value="review">复盘汇报</option>
+                <option value="mentor">导师汇报</option>
+                <option value="custom">自定义汇报</option>
+              </select>
+            </label>
+            <label>
+              语言风格
+              <select id="reportToneSelect">
+                <option value="concise">简洁正式</option>
+                <option value="detailed">详细完整</option>
+                <option value="academic">学术导师风</option>
+                <option value="casual">自然口语</option>
+              </select>
+            </label>
+            <label class="wide-field">
+              自定义要求
+              <textarea id="reportCustomPrompt" rows="3" placeholder="例如：突出科研进展、列出下周计划、适合发给导师..."></textarea>
+            </label>
+          </div>
+          <div class="report-actions">
+            <button id="generateReportBtn" class="primary-button" type="button">生成汇报</button>
+            <button id="copyReportBtn" class="secondary-button" type="button" disabled>复制</button>
+            <button id="downloadReportBtn" class="secondary-button" type="button" disabled>下载</button>
+          </div>
+        </section>
+
+        <section class="module report-output-module">
+          <div class="module-title">
+            <h2>生成结果</h2>
+            <span id="reportItemCount">0 条记录</span>
+          </div>
+          <pre id="reportOutput" class="report-output">选择时间范围和汇报形式后，点击“生成汇报”。</pre>
+        </section>
       </section>
 
       <div class="section-heading dashboard-heading">

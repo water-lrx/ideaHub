@@ -28,6 +28,25 @@ PROVIDER_DEFAULTS = {
     "openai": {"baseUrl": "https://api.openai.com/v1", "model": "gpt-4.1-mini", "requiresKey": True},
     "custom": {"baseUrl": "http://localhost:11434/v1", "model": "local-model", "requiresKey": False},
 }
+REPORT_STYLE_LABELS = {
+    "summary": "总结汇报",
+    "review": "复盘汇报",
+    "mentor": "导师汇报",
+    "custom": "自定义汇报",
+}
+REPORT_PERIOD_LABELS = {
+    "day": "日报",
+    "week": "周报",
+    "month": "月报",
+    "year": "年报",
+    "custom": "自定义范围",
+}
+REPORT_TONE_LABELS = {
+    "concise": "简洁正式",
+    "detailed": "详细完整",
+    "academic": "学术导师风",
+    "casual": "自然口语",
+}
 
 
 def utc_now():
@@ -215,6 +234,83 @@ def analyze_content(content, request_config=None):
     return normalize_analysis(parse_model_json(text), content)
 
 
+def report_item_line(item, index):
+    item = normalize_item(item)
+    tags = f' 标签：{" ".join("#" + str(tag) for tag in item.get("tags", []))}' if item.get("tags") else ""
+    due = f' 日程：{item["dueDate"]}' if item.get("dueDate") else ""
+    status = "/已完成" if item.get("status") == "done" else ""
+    content = str(item.get("content") or "")[:360]
+    return (
+        f'{index + 1}. [{CATEGORY_DISPLAY(item["category"])}/{item["priority"]}{status}] {item["title"]}\n'
+        f'   日期：{item.get("dueDate") or str(item.get("createdAt") or "")[:10]} 来源：{item["source"]}{due}{tags}\n'
+        f'   摘要：{item["summary"]}\n'
+        f"   内容：{content}"
+    )
+
+
+def CATEGORY_DISPLAY(category):
+    return {"todo": "代办", "plan": "计划", "idea": "想法", "record": "记录", "archive": "归档"}.get(category, category)
+
+
+def report_messages(report_range, items, options):
+    style = str(options.get("style") or "summary")
+    tone = str(options.get("tone") or "concise")
+    custom = str(options.get("customPrompt") or "").strip()
+    style_instruction = {
+        "summary": "输出一份阶段总结汇报，突出完成事项、重要进展、待跟进事项和下一步计划。",
+        "review": "输出一份复盘汇报，包含目标回顾、完成情况、亮点、问题、原因分析、改进动作和下一周期计划。",
+        "mentor": "输出一份适合发给导师/上级的汇报，表达清楚研究或工作进展、遇到的问题、需要反馈的点和下一步安排。",
+        "custom": custom or "按用户记录生成一份结构清晰的自定义汇报。",
+    }.get(style, "输出一份结构清晰的阶段汇报。")
+    content = "\n".join(report_item_line(item, idx) for idx, item in enumerate(items))
+    user_content = "\n".join(
+        part
+        for part in [
+            f'汇报周期：{REPORT_PERIOD_LABELS.get(report_range.get("period"), "自定义范围")}',
+            f'日期范围：{report_range.get("start")} 至 {report_range.get("end")}',
+            f"汇报形式：{REPORT_STYLE_LABELS.get(style, '汇报')}",
+            f"语言风格：{REPORT_TONE_LABELS.get(tone, '简洁正式')}",
+            f"补充要求：{custom}" if custom else "",
+            f"记录数量：{len(items)}",
+            "",
+            "请按以下要求生成：",
+            style_instruction,
+            "请包含：标题、概览、分类进展、关键事项、问题/风险、下一步计划。若是导师汇报，请额外加入“需要请教/反馈的问题”。",
+            "",
+            "原始记录：",
+            content,
+        ]
+        if part
+    )
+    return [
+        {
+            "role": "system",
+            "content": "你是一个严谨的个人工作复盘与汇报助手。你只根据用户给出的记录生成中文汇报，不编造未出现的事实。可以进行归纳、合并和措辞优化。输出 Markdown，结构清晰，可直接复制给他人。",
+        },
+        {"role": "user", "content": user_content},
+    ]
+
+
+def generate_report(report_range, items, options=None, request_config=None):
+    cfg = model_config(request_config)
+    ensure_model_ready(cfg)
+    payload = {
+        "model": cfg["model"],
+        "temperature": 0.2,
+        "messages": report_messages(report_range or {}, items or [], options or {}),
+    }
+    response = http_json(
+        "POST",
+        f'{cfg["baseUrl"].rstrip("/")}/chat/completions',
+        payload,
+        {"Authorization": f'Bearer {cfg["apiKey"]}'} if cfg["apiKey"] else {},
+    )
+    text = (((response.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    if not text:
+        raise ValueError("model returned empty report")
+    return text
+
+
 def ensure_model_ready(cfg):
     if cfg["provider"] == "local" or not cfg["baseUrl"] or not cfg["model"]:
         raise RuntimeError("请先配置 DeepSeek 或兼容模型接口")
@@ -400,6 +496,9 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/api/classify":
                 items = analyze_content(str(body.get("content") or ""), body.get("config") or {})
                 return self.json({"result": items[0], "items": items})
+            if parsed.path == "/api/report":
+                report = generate_report(body.get("range") or {}, body.get("items") or [], body.get("options") or {}, body.get("config") or {})
+                return self.json({"report": report})
             if parsed.path == "/api/staged":
                 content = str(body.get("content") or "").strip()
                 if not content:

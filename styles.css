@@ -780,6 +780,71 @@ select:focus {
   gap: 18px;
 }
 
+.report-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.78fr) minmax(0, 1.22fr);
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.report-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-form-grid label {
+  display: grid;
+  gap: 6px;
+  color: #34424f;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+:root[data-theme="dark"] .report-form-grid label {
+  color: var(--ink);
+}
+
+.report-form-grid textarea {
+  min-height: 92px;
+}
+
+.report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.report-output-module {
+  display: grid;
+  grid-template-rows: auto minmax(320px, 1fr);
+}
+
+.report-output {
+  min-height: 320px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfc;
+  color: #243341;
+  font:
+    14px/1.7 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  padding: 14px;
+}
+
+:root[data-theme="dark"] .report-output {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
 .module {
   min-width: 0;
   padding: 18px;
@@ -1181,6 +1246,8 @@ select:focus {
 body.layout-nav .workspace-band,
 body.layout-nav .overview-heading,
 body.layout-nav .metric-grid,
+body.layout-nav .report-heading,
+body.layout-nav .report-grid,
 body.layout-nav .dashboard-heading,
 body.layout-nav .dashboard-grid {
   display: none;
@@ -1192,11 +1259,13 @@ body.layout-nav[data-active-view="calendar"] .workspace-band {
 }
 
 body.layout-nav[data-active-view="overview"] .overview-heading,
+body.layout-nav[data-active-view="report"] .report-heading,
 body.layout-nav[data-active-view="dashboard"] .dashboard-heading {
   display: flex;
 }
 
 body.layout-nav[data-active-view="overview"] .metric-grid,
+body.layout-nav[data-active-view="report"] .report-grid,
 body.layout-nav[data-active-view="dashboard"] .dashboard-grid {
   display: grid;
 }
@@ -1556,7 +1625,8 @@ body.screen-mode .dashboard-grid {
 
 @media (max-width: 1120px) {
   .command-band,
-  .dashboard-grid {
+  .dashboard-grid,
+  .report-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1622,6 +1692,7 @@ body.screen-mode .dashboard-grid {
   }
 
   .settings-grid,
+  .report-form-grid,
   .metric-grid,
   .kanban {
     grid-template-columns: 1fr;
@@ -1629,6 +1700,11 @@ body.screen-mode .dashboard-grid {
 
   .provider-help {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .report-actions {
+    align-items: stretch;
     flex-direction: column;
   }
 

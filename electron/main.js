@@ -14,6 +14,25 @@ const PROVIDER_DEFAULTS = {
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-4.1-mini", requiresKey: true },
   custom: { baseUrl: "http://localhost:11434/v1", model: "local-model", requiresKey: false },
 };
+const REPORT_STYLE_LABELS = {
+  summary: "总结汇报",
+  review: "复盘汇报",
+  mentor: "导师汇报",
+  custom: "自定义汇报",
+};
+const REPORT_PERIOD_LABELS = {
+  day: "日报",
+  week: "周报",
+  month: "月报",
+  year: "年报",
+  custom: "自定义范围",
+};
+const REPORT_TONE_LABELS = {
+  concise: "简洁正式",
+  detailed: "详细完整",
+  academic: "学术导师风",
+  casual: "自然口语",
+};
 
 let mainWindow = null;
 let localServer = null;
@@ -227,6 +246,63 @@ function analysisMessages(content) {
   ];
 }
 
+function reportItemLine(item, index) {
+  const normalized = normalizeItem(item);
+  const tags = normalized.tags.length ? ` 标签：${normalized.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+  const due = normalized.dueDate ? ` 日程：${normalized.dueDate}` : "";
+  const status = normalized.status === "done" ? "/已完成" : "";
+  return [
+    `${index + 1}. [${CATEGORY_LABELS_TEXT(normalized.category)}/${normalized.priority}${status}] ${normalized.title}`,
+    `   日期：${normalized.dueDate || String(normalized.createdAt).slice(0, 10)} 来源：${normalized.source}${due}${tags}`,
+    `   摘要：${normalized.summary}`,
+    `   内容：${String(normalized.content || "").slice(0, 360)}`,
+  ].join("\n");
+}
+
+function CATEGORY_LABELS_TEXT(category) {
+  return { todo: "代办", plan: "计划", idea: "想法", record: "记录", archive: "归档" }[category] || category;
+}
+
+function reportMessages(reportRange = {}, items = [], options = {}) {
+  const style = String(options.style || "summary");
+  const tone = String(options.tone || "concise");
+  const custom = String(options.customPrompt || "").trim();
+  const styleInstruction = {
+    summary: "输出一份阶段总结汇报，突出完成事项、重要进展、待跟进事项和下一步计划。",
+    review: "输出一份复盘汇报，包含目标回顾、完成情况、亮点、问题、原因分析、改进动作和下一周期计划。",
+    mentor: "输出一份适合发给导师/上级的汇报，表达清楚研究或工作进展、遇到的问题、需要反馈的点和下一步安排。",
+    custom: custom || "按用户记录生成一份结构清晰的自定义汇报。",
+  }[style] || "输出一份结构清晰的阶段汇报。";
+  const content = items.map(reportItemLine).join("\n");
+  return [
+    {
+      role: "system",
+      content:
+        "你是一个严谨的个人工作复盘与汇报助手。你只根据用户给出的记录生成中文汇报，不编造未出现的事实。可以进行归纳、合并和措辞优化。输出 Markdown，结构清晰，可直接复制给他人。",
+    },
+    {
+      role: "user",
+      content: [
+        `汇报周期：${REPORT_PERIOD_LABELS[reportRange.period] || "自定义范围"}`,
+        `日期范围：${reportRange.start} 至 ${reportRange.end}`,
+        `汇报形式：${REPORT_STYLE_LABELS[style] || "汇报"}`,
+        `语言风格：${REPORT_TONE_LABELS[tone] || "简洁正式"}`,
+        custom ? `补充要求：${custom}` : "",
+        `记录数量：${items.length}`,
+        "",
+        "请按以下要求生成：",
+        styleInstruction,
+        "请包含：标题、概览、分类进展、关键事项、问题/风险、下一步计划。若是导师汇报，请额外加入“需要请教/反馈的问题”。",
+        "",
+        "原始记录：",
+        content,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  ];
+}
+
 async function analyzeContent(content, requestConfig = {}) {
   const config = { ...readConfig(), ...requestConfig };
   const provider = config.provider || "deepseek";
@@ -252,6 +328,34 @@ async function analyzeContent(content, requestConfig = {}) {
   const data = await response.json();
   const text = data.choices?.[0]?.message?.content || "";
   return normalizeAnalysis(parseModelJson(text), content);
+}
+
+async function generateReport(reportRange, items, options = {}, requestConfig = {}) {
+  const config = { ...readConfig(), ...requestConfig };
+  const provider = config.provider || "deepseek";
+  const baseUrl = config.baseUrl || "";
+  const model = config.model || "";
+  const apiKey = config.apiKey || "";
+
+  ensureModelReady({ provider, baseUrl, model, apiKey });
+
+  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      messages: reportMessages(reportRange, items, options),
+    }),
+  });
+  if (!response.ok) throw new Error(`Model request failed: ${response.status}`);
+  const data = await response.json();
+  const text = String(data.choices?.[0]?.message?.content || "").trim();
+  if (!text) throw new Error("model returned empty report");
+  return text;
 }
 
 function ensureModelReady(config) {
@@ -365,6 +469,11 @@ async function handleApi(request, response, url) {
       const body = await readBody(request);
       const items = await analyzeContent(String(body.content || ""), body.config || {});
       return sendJson(response, { result: items[0], items });
+    }
+    if (request.method === "POST" && url.pathname === "/api/report") {
+      const body = await readBody(request);
+      const report = await generateReport(body.range || {}, body.items || [], body.options || {}, body.config || {});
+      return sendJson(response, { report });
     }
     if (request.method === "POST" && url.pathname === "/api/staged") {
       const body = await readBody(request);
