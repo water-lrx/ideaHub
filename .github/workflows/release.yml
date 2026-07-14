@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v0.2.0"
+        description: "Release tag, for example v0.3.0"
         required: true
-        default: "v0.2.0"
+        default: "v0.3.0"
   push:
     tags:
       - "v*"
@@ -144,4 +144,5 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           draft: false
           prerelease: false
+          generate_release_notes: true
           files: release-assets/*
