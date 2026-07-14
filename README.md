@@ -20,9 +20,14 @@ IdeaHub is designed for private personal knowledge work. Data stays on the local
 - **Multi-item splitting**: one long mixed note can become multiple todos, plans, ideas, and records.
 - **Calendar view**: records appear on a monthly calendar; todos and plans with `dueDate` are highlighted on their scheduled date.
 - **Dashboard**: metrics, category chart, priority list, board columns, and timeline.
+- **Workspace overview**: review the current category distribution and recently updated records in one place.
+- **Periodic reports**: generate daily, weekly, monthly, yearly, or custom-range summaries, reviews, mentor updates, and custom reports.
 - **Manual correction**: move existing records between categories without calling the model again.
 - **Bulk deletion**: select multiple records, select all visible records, and delete in one action.
 - **Layout modes**: choose between a full single-page layout and a navigation layout with separate sections.
+- **Theme switching**: use light mode, dark mode, or follow the operating-system theme.
+- **Per-provider credentials**: each model provider keeps its own API key instead of sharing one global key.
+- **Local runtime logs**: inspect errors, warnings, and status information in the app; common API-key and authorization fields are redacted.
 - **Local-first storage**: browser storage, JSON files, or optional Memos integration.
 - **PWA support**: install from supported browsers and use quick links such as `/?focus=capture`.
 - **Desktop app**: Electron wrapper with a local-only server and a Quit button that stops the app process.
@@ -35,6 +40,7 @@ IdeaHub does not upload content by itself.
 - Browser-only mode stores data in `localStorage`.
 - Python server mode stores records in `data/items.json` and staged notes in `data/staged.json`.
 - Desktop mode stores data in the operating system app data directory.
+- Runtime logs stay on the local device and are excluded from exports; common credential and authorization fields are redacted.
 - Model providers receive text only when you click model test or submit the buffer.
 - `.env`, local data files, build outputs, and packaged desktop folders are ignored by Git.
 

@@ -189,7 +189,8 @@ def model_config(request_config=None):
         provider = "deepseek"
     base_url = env("MODEL_BASE_URL") or request_config.get("baseUrl") or ""
     model = env("MODEL_NAME") or request_config.get("model") or ""
-    api_key = env("MODEL_API_KEY") or request_config.get("apiKey") or ""
+    api_keys = request_config.get("apiKeys") if isinstance(request_config.get("apiKeys"), dict) else {}
+    api_key = env("MODEL_API_KEY") or api_keys.get(provider) or request_config.get("apiKey") or ""
     defaults = PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["custom"])
     if not base_url:
         base_url = defaults["baseUrl"]

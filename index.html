@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#1d7a55" />
+    <meta name="theme-color" content="#23674c" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="IdeaHub" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <title>IdeaHub 大屏</title>
+    <title>IdeaHub 工作台</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icons/icon-192.png" />
     <link rel="stylesheet" href="./styles.css" />
@@ -22,9 +22,9 @@
               <path d="M16 20h16M16 27h11M29 27h3" />
             </svg>
           </div>
-          <div>
+          <div class="brand-copy">
             <h1>IdeaHub</h1>
-            <p>多端收集 · 智能分类 · 数字大屏</p>
+            <p>本地优先的想法工作台</p>
           </div>
         </div>
         <div class="top-actions" aria-label="全局操作">
@@ -68,32 +68,48 @@
       </header>
 
       <nav id="appNav" class="app-nav" aria-label="主导航" hidden>
-        <button class="active" type="button" data-view="capture">收集</button>
-        <button type="button" data-view="calendar">日历</button>
-        <button type="button" data-view="overview">概览</button>
-        <button type="button" data-view="report">汇报</button>
-        <button type="button" data-view="dashboard">大屏</button>
+        <div class="nav-label">工作区</div>
+        <button class="active" type="button" data-view="capture"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 13h4l2 3h4l2-3h4" /></svg></span><span>收集箱</span></button>
+        <button type="button" data-view="calendar"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5h18v16H3zM16 3v4M8 3v4M3 10h18" /></svg></span><span>日历</span></button>
+        <button type="button" data-view="overview"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM14 7h6V4h-6zM4 20h6v-3H4z" /></svg></span><span>概览</span></button>
+        <button type="button" data-view="report"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8" /></svg></span><span>汇报</span></button>
+        <button type="button" data-view="dashboard"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3h7v18H3zM14 3h7v8h-7zM14 15h7v6h-7z" /></svg></span><span>分类看板</span></button>
+        <div class="nav-label nav-label-system">系统</div>
+        <button type="button" data-view="logs"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5" /></svg></span><span>运行日志</span></button>
+        <div class="nav-footer" aria-label="本地存储状态">
+          <span class="nav-status-dot" aria-hidden="true"></span>
+          <div><strong>本地空间</strong><small>数据保存在此设备</small></div>
+        </div>
       </nav>
+
+      <div class="content-stage">
 
       <section class="workspace-band" aria-label="工作台">
         <div class="workspace-heading">
           <div>
-            <span>工作台</span>
-            <h2>收集、暂存、提交</h2>
+            <span>收集箱</span>
+            <h2>先记下来，再让 AI 整理</h2>
           </div>
-          <p>先把原始想法放进缓冲区，攒到合适的时候再交给大模型统一拆分、分类并入库。</p>
+          <div class="workspace-status" aria-label="当前状态">
+            <span id="captureModelStatus" class="workspace-status-pill">检查模型中</span>
+            <span id="captureStoreStatus" class="workspace-status-pill">本地存储</span>
+          </div>
         </div>
       <section class="command-band" aria-label="信息收集">
         <form id="captureForm" class="capture-form">
-          <label for="captureInput">收集箱</label>
+          <div class="capture-title-row">
+            <label for="captureInput">写下任何内容</label>
+            <span id="captureCharCount">0 字</span>
+          </div>
           <textarea
             id="captureInput"
             rows="5"
-            placeholder="把想法、计划、代办、灵感、会议记录直接丢进来..."
+            placeholder="想法、计划、待办、问答、会议记录，都可以直接写在这里……"
             required
           ></textarea>
           <div class="capture-controls">
-            <button class="primary-button" type="submit">
+            <span class="capture-privacy">内容先保存在本机缓冲区</span>
+            <button id="captureSubmitBtn" class="primary-button" type="submit" title="加入缓冲区">
               <span aria-hidden="true">＋</span>
               加入缓冲区
             </button>
@@ -104,8 +120,15 @@
               <span id="stageCount">0 条</span>
             </div>
             <div class="staging-actions">
-              <button id="commitBufferBtn" class="secondary-button" type="button" disabled>提交入库</button>
+              <button id="commitBufferBtn" class="primary-button" type="button" disabled>
+                <span class="button-spinner" aria-hidden="true"></span>
+                <span class="button-label">AI 整理入库</span>
+              </button>
               <button id="clearBufferBtn" class="text-button" type="button" disabled>清空缓冲区</button>
+            </div>
+            <div id="commitProgress" class="commit-progress" role="status" aria-live="polite" hidden>
+              <div class="commit-progress-track"><span></span></div>
+              <p>准备处理</p>
             </div>
             <div id="stagingList" class="staging-list"></div>
           </section>
@@ -163,21 +186,53 @@
       </div>
       <section class="metric-grid" aria-label="概览指标">
         <article class="metric-tile metric-todo">
-          <span>待办</span>
+          <div class="metric-tile-head">
+            <span class="metric-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></span>
+            <span>待办</span>
+          </div>
           <strong id="todoCount">0</strong>
+          <small>等待完成</small>
         </article>
         <article class="metric-tile metric-plan">
-          <span>计划</span>
+          <div class="metric-tile-head">
+            <span class="metric-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3z" /><path d="M17.5 14v7M14 17.5h7" /></svg></span>
+            <span>计划</span>
+          </div>
           <strong id="planCount">0</strong>
+          <small>正在推进</small>
         </article>
         <article class="metric-tile metric-idea">
-          <span>未实现想法</span>
+          <div class="metric-tile-head">
+            <span class="metric-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 22h4" /><path d="M8.4 15.1A7 7 0 1 1 15.6 15c-.8.6-1.3 1.4-1.5 2H9.9c-.2-1-.7-1.7-1.5-2Z" /></svg></span>
+            <span>未实现想法</span>
+          </div>
           <strong id="ideaCount">0</strong>
+          <small>等待探索</small>
         </article>
         <article class="metric-tile metric-record">
-          <span>有趣记录</span>
+          <div class="metric-tile-head">
+            <span class="metric-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19.5V5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-1.5Z" /><path d="M8 7h6M8 11h7M8 15h5" /></svg></span>
+            <span>有趣记录</span>
+          </div>
           <strong id="recordCount">0</strong>
+          <small>持续积累</small>
         </article>
+      </section>
+      <section class="overview-detail-grid" aria-label="概览详情">
+        <section class="module overview-distribution">
+          <div class="module-title">
+            <h2>工作分布</h2>
+            <span id="overviewActiveTotal">0 条进行中</span>
+          </div>
+          <div id="overviewDistribution" class="overview-distribution-list"></div>
+        </section>
+        <section class="module overview-recent">
+          <div class="module-title">
+            <h2>最近记录</h2>
+            <span>按更新时间</span>
+          </div>
+          <div id="overviewRecentList" class="overview-recent-list"></div>
+        </section>
       </section>
 
       <div class="section-heading report-heading">
@@ -239,9 +294,18 @@
             </label>
           </div>
           <div class="report-actions">
-            <button id="generateReportBtn" class="primary-button" type="button">生成汇报</button>
-            <button id="copyReportBtn" class="secondary-button" type="button" disabled>复制</button>
-            <button id="downloadReportBtn" class="secondary-button" type="button" disabled>下载</button>
+            <button id="generateReportBtn" class="primary-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h6" /></svg>
+              生成汇报
+            </button>
+            <button id="copyReportBtn" class="secondary-button" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+              复制
+            </button>
+            <button id="downloadReportBtn" class="secondary-button" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
+              下载
+            </button>
           </div>
         </section>
 
@@ -323,6 +387,34 @@
           <div id="timelineList" class="timeline"></div>
         </section>
       </section>
+
+      <div class="section-heading logs-heading">
+        <div>
+          <span>诊断</span>
+          <h2>运行日志</h2>
+        </div>
+        <div class="log-actions" aria-label="日志操作">
+          <span id="logCount">0 条日志</span>
+          <button id="copyLogsBtn" class="secondary-button" type="button">复制全部</button>
+          <button id="clearLogsBtn" class="danger-button" type="button">清空日志</button>
+        </div>
+      </div>
+      <section class="module logs-module" aria-label="运行日志">
+        <div class="log-toolbar">
+          <label>
+            级别
+            <select id="logLevelFilter">
+              <option value="all">全部</option>
+              <option value="error">错误</option>
+              <option value="warn">警告</option>
+              <option value="info">信息</option>
+            </select>
+          </label>
+          <p>日志仅保存在本机，最多保留最近 300 条。API Key 不会写入日志。</p>
+        </div>
+        <div id="logList" class="log-list"></div>
+      </section>
+      </div>
     </main>
 
     <div id="detailModal" class="detail-modal" aria-hidden="true">
@@ -358,46 +450,60 @@
           </button>
         </header>
         <div class="model-settings-panel">
-          <div class="settings-grid">
-            <label>
-              提供方
-              <select id="providerSelect">
-                <option value="deepseek">DeepSeek</option>
-                <option value="zhipu">智谱 GLM（免费 Flash）</option>
-                <option value="siliconflow">硅基流动（免费额度）</option>
-                <option value="dashscope">阿里百炼 Qwen（免费额度）</option>
-                <option value="openai">OpenAI</option>
-                <option value="custom">自定义兼容接口</option>
-              </select>
-            </label>
-            <label>
-              模型
-              <input id="modelInput" type="text" autocomplete="off" />
-            </label>
-            <label class="wide-field">
-              Base URL
-              <input id="baseUrlInput" type="url" autocomplete="off" />
-            </label>
-            <label class="wide-field">
-              API Key
-              <input id="apiKeyInput" type="password" autocomplete="off" placeholder="保存在本机浏览器" />
-            </label>
-            <div id="providerHelp" class="provider-help wide-field"></div>
-            <label>
-              布局
-              <select id="layoutModeSelect">
-                <option value="single">单页模式</option>
-                <option value="nav">导航栏模式</option>
-              </select>
-            </label>
-            <label>
-              主题
-              <select id="themeModeSelect">
-                <option value="system">跟随系统</option>
-                <option value="light">浅色</option>
-                <option value="dark">深色</option>
-              </select>
-            </label>
+          <div class="settings-section">
+            <div class="settings-section-head">
+              <span aria-hidden="true">01</span>
+              <div><h3>模型服务</h3><p>为每个服务商分别保存连接信息</p></div>
+            </div>
+            <div class="settings-grid settings-model-grid">
+              <label>
+                提供方
+                <select id="providerSelect">
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="zhipu">智谱 GLM（免费 Flash）</option>
+                  <option value="siliconflow">硅基流动（免费额度）</option>
+                  <option value="dashscope">阿里百炼 Qwen（免费额度）</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="custom">自定义兼容接口</option>
+                </select>
+              </label>
+              <label>
+                模型
+                <input id="modelInput" type="text" autocomplete="off" />
+              </label>
+              <label class="wide-field">
+                Base URL
+                <input id="baseUrlInput" type="url" autocomplete="off" />
+              </label>
+              <label class="wide-field">
+                API Key
+                <input id="apiKeyInput" type="password" autocomplete="off" placeholder="每个提供方单独保存在本机" />
+              </label>
+              <div id="providerHelp" class="provider-help wide-field"></div>
+            </div>
+          </div>
+          <div class="settings-section settings-preferences">
+            <div class="settings-section-head">
+              <span aria-hidden="true">02</span>
+              <div><h3>界面偏好</h3><p>选择适合你的信息浏览方式</p></div>
+            </div>
+            <div class="settings-grid">
+              <label>
+                布局
+                <select id="layoutModeSelect">
+                  <option value="single">单页模式</option>
+                  <option value="nav">导航栏模式</option>
+                </select>
+              </label>
+              <label>
+                主题
+                <select id="themeModeSelect">
+                  <option value="system">跟随系统</option>
+                  <option value="light">浅色</option>
+                  <option value="dark">深色</option>
+                </select>
+              </label>
+            </div>
           </div>
           <div class="model-actions">
             <button id="saveConfigBtn" class="secondary-button" type="button">保存配置</button>

@@ -36,6 +36,7 @@ const REPORT_TONE_LABELS = {
 
 let mainWindow = null;
 let localServer = null;
+const MAX_LOG_ENTRIES = 300;
 
 function utcNow() {
   return new Date().toISOString();
@@ -68,6 +69,51 @@ function configFile() {
   return path.join(dataDir(), "config.json");
 }
 
+function logFile() {
+  return path.join(dataDir(), "logs.json");
+}
+
+function sanitizeLogText(value) {
+  return String(value || "")
+    .replace(/(authorization\s*[:=]\s*["']?bearer\s+)[^\s"']+/gi, "$1[已隐藏]")
+    .replace(/(["']?apiKey["']?\s*[:=]\s*["'])[^"']+(["'])/gi, "$1[已隐藏]$2")
+    .replace(/\b(sk-[A-Za-z0-9_-]{12,})\b/g, "sk-[已隐藏]")
+    .slice(0, 12000);
+}
+
+function readLogs() {
+  fs.mkdirSync(dataDir(), { recursive: true });
+  if (!fs.existsSync(logFile())) return [];
+  try {
+    const logs = JSON.parse(fs.readFileSync(logFile(), "utf8") || "[]");
+    return Array.isArray(logs) ? logs.slice(0, MAX_LOG_ENTRIES) : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function writeLogs(logs) {
+  fs.mkdirSync(dataDir(), { recursive: true });
+  fs.writeFileSync(logFile(), JSON.stringify(logs.slice(0, MAX_LOG_ENTRIES), null, 2), "utf8");
+}
+
+function recordMainLog(level, source, message, error = null) {
+  const details = error instanceof Error ? error.stack || error.message : error || "";
+  const entry = {
+    id: crypto.randomUUID(),
+    level: ["error", "warn", "info"].includes(level) ? level : "info",
+    source: sanitizeLogText(source || "桌面后端"),
+    message: sanitizeLogText(message || "未知日志"),
+    details: sanitizeLogText(details),
+    createdAt: utcNow(),
+  };
+  try {
+    writeLogs([entry, ...readLogs()]);
+  } catch (writeError) {
+    console.error("Failed to persist desktop log", writeError);
+  }
+}
+
 function ensureDataFile() {
   fs.mkdirSync(dataDir(), { recursive: true });
   if (!fs.existsSync(dataFile())) {
@@ -82,29 +128,43 @@ function readConfig() {
     baseUrl: PROVIDER_DEFAULTS.deepseek.baseUrl,
     model: PROVIDER_DEFAULTS.deepseek.model,
     apiKey: "",
+    apiKeys: {},
   };
   if (!fs.existsSync(configFile())) return defaults;
   try {
-    const saved = { ...defaults, ...JSON.parse(fs.readFileSync(configFile(), "utf8") || "{}") };
-    if (saved.provider === "local") return defaults;
-    if (!PROVIDER_DEFAULTS[saved.provider]) return { ...saved, provider: "custom" };
-    return saved;
+    return normalizeConfig(JSON.parse(fs.readFileSync(configFile(), "utf8") || "{}"));
   } catch (error) {
     console.error("Failed to read config", error);
+    recordMainLog("error", "配置读取", "读取模型配置失败", error);
     return defaults;
   }
 }
 
 function writeConfig(config = {}) {
   fs.mkdirSync(dataDir(), { recursive: true });
-  const saved = {
-    provider: String(config.provider === "local" ? "deepseek" : config.provider || "deepseek"),
-    baseUrl: String(config.baseUrl || ""),
-    model: String(config.model || ""),
-    apiKey: String(config.apiKey || ""),
-  };
+  const saved = normalizeConfig(config);
   fs.writeFileSync(configFile(), JSON.stringify(saved, null, 2), "utf8");
   return saved;
+}
+
+function normalizeConfig(config = {}) {
+  let provider = String(config.provider === "local" ? "deepseek" : config.provider || "deepseek");
+  if (!PROVIDER_DEFAULTS[provider]) provider = "custom";
+  const hasApiKeyMap = config.apiKeys && typeof config.apiKeys === "object" && !Array.isArray(config.apiKeys);
+  const apiKeys = hasApiKeyMap
+    ? Object.fromEntries(Object.entries(config.apiKeys).map(([key, value]) => [key, String(value || "")]))
+    : {};
+  if (!hasApiKeyMap && config.apiKey) apiKeys[provider] = String(config.apiKey);
+  const apiKey = apiKeys[provider] || String(config.apiKey || "");
+  apiKeys[provider] = apiKey;
+  const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.custom;
+  return {
+    provider,
+    baseUrl: String(config.baseUrl || defaults.baseUrl),
+    model: String(config.model || defaults.model),
+    apiKey,
+    apiKeys,
+  };
 }
 
 function readItems() {
@@ -114,6 +174,7 @@ function readItems() {
     return Array.isArray(raw) ? raw.map(normalizeItem) : [];
   } catch (error) {
     console.error("Failed to read items", error);
+    recordMainLog("error", "记录读取", "读取已分类记录失败", error);
     return [];
   }
 }
@@ -135,6 +196,7 @@ function readStaged() {
     return Array.isArray(raw) ? raw.map(normalizeStagedItem) : [];
   } catch (error) {
     console.error("Failed to read staged items", error);
+    recordMainLog("error", "缓冲区读取", "读取缓冲区失败", error);
     return [];
   }
 }
@@ -455,6 +517,13 @@ async function handleApi(request, response, url) {
     if (request.method === "GET" && url.pathname === "/api/config") {
       return sendJson(response, { config: readConfig() });
     }
+    if (request.method === "GET" && url.pathname === "/api/logs") {
+      return sendJson(response, { logs: readLogs() });
+    }
+    if (request.method === "DELETE" && url.pathname === "/api/logs") {
+      writeLogs([]);
+      return sendJson(response, {}, 204);
+    }
     if (request.method === "POST" && url.pathname === "/api/config") {
       const body = await readBody(request);
       return sendJson(response, { config: writeConfig(body.config || body) });
@@ -538,6 +607,7 @@ async function handleApi(request, response, url) {
     return sendError(response, 404, "not found");
   } catch (error) {
     console.error(error);
+    recordMainLog("error", "桌面 API", `${request.method} ${url.pathname} 处理失败`, error);
     return sendError(response, 500, error.message || "internal error");
   }
 }
@@ -556,7 +626,10 @@ function startLocalServer() {
       }
       serveStatic(url.pathname, response);
     });
-    server.on("error", reject);
+    server.on("error", (error) => {
+      recordMainLog("error", "本地服务", "本地服务启动失败", error);
+      reject(error);
+    });
     server.listen(0, "127.0.0.1", () => {
       localServer = server;
       resolve(server.address().port);
@@ -596,6 +669,12 @@ async function createWindow() {
       event.preventDefault();
       shell.openExternal(url);
     }
+  });
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    recordMainLog("error", "渲染进程", `界面进程异常退出：${details.reason}`, JSON.stringify(details));
+  });
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    recordMainLog("error", "页面加载", `页面加载失败：${errorCode} ${errorDescription}`, validatedURL);
   });
   await mainWindow.loadURL(`http://127.0.0.1:${port}/`);
 }

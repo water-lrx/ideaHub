@@ -2,6 +2,9 @@ const STORAGE_KEY = "ideahub.items.v1";
 const STAGED_KEY = "ideahub.staged.v1";
 const CONFIG_KEY = "ideahub.config.v1";
 const UI_CONFIG_KEY = "ideahub.ui.v1";
+const LOG_KEY = "ideahub.logs.v1";
+const MAX_LOG_ENTRIES = 300;
+const COMMIT_BATCH_SIZE = 4;
 const SYSTEM_DARK_QUERY = window.matchMedia?.("(prefers-color-scheme: dark)");
 
 const CATEGORY_LABELS = {
@@ -13,11 +16,11 @@ const CATEGORY_LABELS = {
 };
 
 const CATEGORY_COLORS = {
-  todo: "#b34258",
-  plan: "#4252a2",
-  idea: "#a76112",
-  record: "#13798a",
-  archive: "#607080",
+  todo: "#c25462",
+  plan: "#5369b1",
+  idea: "#b77a27",
+  record: "#2f7f88",
+  archive: "#718079",
 };
 
 const REPORT_STYLE_LABELS = {
@@ -47,6 +50,7 @@ const DEFAULT_CONFIG = {
   baseUrl: "https://api.deepseek.com/v1",
   model: "deepseek-v4-flash",
   apiKey: "",
+  apiKeys: {},
 };
 
 const PROVIDER_DEFAULTS = {
@@ -164,9 +168,13 @@ const state = {
   selectedIds: new Set(),
   lastReport: "",
   lastReportFilename: "",
+  logs: loadLogs(),
+  logLevelFilter: "all",
   installPrompt: null,
   calendarDate: startOfMonth(new Date()),
   selectedDate: "",
+  busy: false,
+  commitProgress: null,
   backend: {
     available: false,
     store: "browser",
@@ -178,10 +186,15 @@ const state = {
 const els = {
   captureForm: document.querySelector("#captureForm"),
   captureInput: document.querySelector("#captureInput"),
+  captureSubmitBtn: document.querySelector("#captureSubmitBtn"),
+  captureCharCount: document.querySelector("#captureCharCount"),
+  captureModelStatus: document.querySelector("#captureModelStatus"),
+  captureStoreStatus: document.querySelector("#captureStoreStatus"),
   stageCount: document.querySelector("#stageCount"),
   stagingList: document.querySelector("#stagingList"),
   commitBufferBtn: document.querySelector("#commitBufferBtn"),
   clearBufferBtn: document.querySelector("#clearBufferBtn"),
+  commitProgress: document.querySelector("#commitProgress"),
   appNav: document.querySelector("#appNav"),
   providerSelect: document.querySelector("#providerSelect"),
   modelInput: document.querySelector("#modelInput"),
@@ -198,6 +211,9 @@ const els = {
   planCount: document.querySelector("#planCount"),
   ideaCount: document.querySelector("#ideaCount"),
   recordCount: document.querySelector("#recordCount"),
+  overviewActiveTotal: document.querySelector("#overviewActiveTotal"),
+  overviewDistribution: document.querySelector("#overviewDistribution"),
+  overviewRecentList: document.querySelector("#overviewRecentList"),
   reportPeriodSelect: document.querySelector("#reportPeriodSelect"),
   reportAnchorDate: document.querySelector("#reportAnchorDate"),
   reportStartDate: document.querySelector("#reportStartDate"),
@@ -230,6 +246,11 @@ const els = {
   selectAllBtn: document.querySelector("#selectAllBtn"),
   clearSelectionBtn: document.querySelector("#clearSelectionBtn"),
   deleteSelectedBtn: document.querySelector("#deleteSelectedBtn"),
+  logCount: document.querySelector("#logCount"),
+  logList: document.querySelector("#logList"),
+  logLevelFilter: document.querySelector("#logLevelFilter"),
+  copyLogsBtn: document.querySelector("#copyLogsBtn"),
+  clearLogsBtn: document.querySelector("#clearLogsBtn"),
   searchInput: document.querySelector("#searchInput"),
   filterSelect: document.querySelector("#filterSelect"),
   clearDoneBtn: document.querySelector("#clearDoneBtn"),
@@ -253,6 +274,7 @@ const els = {
   modalCloseBtn: document.querySelector("#modalCloseBtn"),
 };
 
+installGlobalLogging();
 start();
 
 async function start() {
@@ -261,6 +283,7 @@ async function start() {
   hydrateReportForm();
   hydrateConfigForm();
   bindEvents();
+  updateCaptureMeta();
   await bootstrapData();
   render();
   applyLaunchParams();
@@ -277,7 +300,7 @@ async function bootstrapData() {
   try {
     const health = await apiGet("/api/health");
     if (health.desktop && health.config) {
-      state.config = { ...DEFAULT_CONFIG, ...health.config };
+      state.config = normalizeConfig(health.config);
       persistConfig();
       hydrateConfigForm();
     }
@@ -291,6 +314,7 @@ async function bootstrapData() {
     state.items = Array.isArray(payload.items) ? payload.items.map(normalizeItem) : [];
     const stagedPayload = await apiGet("/api/staged");
     state.staged = Array.isArray(stagedPayload.items) ? stagedPayload.items.map(normalizeStagedItem) : [];
+    await refreshBackendLogs();
     return;
   } catch (error) {
     console.info("Backend unavailable, using browser storage.", error);
@@ -302,6 +326,13 @@ async function bootstrapData() {
 }
 
 function bindEvents() {
+  els.captureInput.addEventListener("input", updateCaptureMeta);
+  els.captureInput.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      els.captureForm.requestSubmit();
+    }
+  });
   els.captureForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const content = els.captureInput.value.trim();
@@ -312,6 +343,7 @@ function bindEvents() {
       const staged = await createStagedItem(content);
       state.staged.unshift(normalizeStagedItem(staged));
       els.captureInput.value = "";
+      updateCaptureMeta();
       await persistStaged();
       render();
       showToast("已加入缓冲区");
@@ -326,8 +358,22 @@ function bindEvents() {
   els.providerSelect.addEventListener("change", () => {
     const provider = els.providerSelect.value;
     const defaults = PROVIDER_DEFAULTS[provider];
+    const previousProvider = state.config.provider;
+    const apiKeys = {
+      ...state.config.apiKeys,
+      ...(previousProvider ? { [previousProvider]: els.apiKeyInput.value.trim() } : {}),
+    };
+    state.config = normalizeConfig({
+      ...state.config,
+      provider,
+      baseUrl: defaults.baseUrl,
+      model: defaults.model,
+      apiKey: apiKeys[provider] || "",
+      apiKeys,
+    });
     els.baseUrlInput.value = defaults.baseUrl;
     els.modelInput.value = defaults.model;
+    els.apiKeyInput.value = state.config.apiKey;
     renderProviderHelp(provider);
   });
 
@@ -425,6 +471,24 @@ function bindEvents() {
   });
 
   els.deleteSelectedBtn.addEventListener("click", deleteSelectedItems);
+  els.logLevelFilter.addEventListener("change", () => {
+    state.logLevelFilter = els.logLevelFilter.value;
+    renderLogs();
+  });
+  els.copyLogsBtn.addEventListener("click", copyLogs);
+  els.clearLogsBtn.addEventListener("click", async () => {
+    state.logs = [];
+    persistLogs();
+    if (state.backend.available && window.ideahubDesktop?.isDesktop) {
+      try {
+        await apiDelete("/api/logs");
+      } catch (error) {
+        console.error("清空桌面日志失败", error);
+      }
+    }
+    renderLogs();
+    showToast("日志已清空");
+  });
 
   els.appNav.querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -569,26 +633,59 @@ async function commitStagedBuffer() {
   if (!state.staged.length) return;
   await refreshBackendConfig();
   setBusy(true);
+  const queued = state.staged.slice().reverse();
+  const batches = chunkItems(queued, COMMIT_BATCH_SIZE);
+  const committedIds = new Set();
+  let createdCount = 0;
   try {
     assertModelReady();
-    const content = state.staged
-      .slice()
-      .reverse()
-      .map((item, index) => `【缓冲 ${index + 1}】\n${item.content}`)
-      .join("\n\n---\n\n");
-    const items = await createItems(content, "缓冲区");
-    state.items.unshift(...items.map(normalizeItem));
-    state.staged = [];
-    await persistStaged();
-    await persistItems();
-    render();
-    showToast(`已提交入库 ${items.length} 条`);
+    updateCommitProgress(0, batches.length, "正在准备模型请求");
+    for (let index = 0; index < batches.length; index += 1) {
+      const batch = batches[index];
+      updateCommitProgress(index, batches.length, `正在整理第 ${index + 1}/${batches.length} 批`);
+      const content = batch.map((item, itemIndex) => `【缓冲 ${index * COMMIT_BATCH_SIZE + itemIndex + 1}】\n${item.content}`).join("\n\n---\n\n");
+      const items = await createItems(content, "缓冲区");
+      state.items.unshift(...items.map(normalizeItem));
+      batch.forEach((item) => committedIds.add(item.id));
+      createdCount += items.length;
+      state.staged = state.staged.filter((item) => !committedIds.has(item.id));
+      await persistStaged();
+      await persistItems();
+      updateCommitProgress(index + 1, batches.length, `已完成 ${index + 1}/${batches.length} 批`);
+      render();
+    }
+    showToast(`AI 已整理入库 ${createdCount} 条内容`);
   } catch (error) {
     console.error(error);
-    showToast(error.message || "提交入库失败，请检查模型配置");
+    if (committedIds.size) {
+      showToast(`已入库 ${createdCount} 条，剩余 ${state.staged.length} 条保留在缓冲区`);
+    } else {
+      showToast(error.message || "提交入库失败，请检查模型配置");
+    }
   } finally {
+    window.setTimeout(() => updateCommitProgress(), 450);
     setBusy(false);
   }
+}
+
+function chunkItems(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+function updateCommitProgress(completed, total, message = "") {
+  if (!els.commitProgress) return;
+  if (!total) {
+    state.commitProgress = null;
+    els.commitProgress.hidden = true;
+    return;
+  }
+  const percent = Math.round((completed / total) * 100);
+  state.commitProgress = { completed, total, message };
+  els.commitProgress.hidden = false;
+  els.commitProgress.querySelector("span").style.width = `${percent}%`;
+  els.commitProgress.querySelector("p").textContent = message;
 }
 
 async function clearStagedBuffer() {
@@ -744,12 +841,15 @@ function render() {
   applyThemeMode();
   applyLayoutMode();
   renderModelStatus();
+  renderWorkspaceStatus();
   renderStagedBuffer();
   renderBulkActions();
   renderMetrics();
+  renderOverviewDetails();
   renderCalendar();
   updateReportRangeSummary();
   renderLists();
+  renderLogs();
   drawChart();
   els.syncHint.textContent = syncText();
 }
@@ -760,7 +860,7 @@ function applyThemeMode() {
   state.ui.themeMode = mode;
   document.documentElement.dataset.theme = resolved;
   document.documentElement.style.colorScheme = resolved;
-  const themeColor = resolved === "dark" ? "#101918" : "#1d7a55";
+  const themeColor = resolved === "dark" ? "#101411" : "#23674c";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColor);
 }
 
@@ -780,21 +880,27 @@ function applyLayoutMode() {
 
 function renderStagedBuffer() {
   els.stageCount.textContent = `${state.staged.length} 条`;
-  els.commitBufferBtn.disabled = !state.staged.length;
-  els.clearBufferBtn.disabled = !state.staged.length;
+  els.commitBufferBtn.disabled = state.busy || !state.staged.length;
+  els.clearBufferBtn.disabled = state.busy || !state.staged.length;
   els.stagingList.innerHTML = "";
   if (!state.staged.length) {
     els.stagingList.append(emptyState("缓冲区为空"));
     return;
   }
   const fragment = document.createDocumentFragment();
-  state.staged.slice(0, 8).forEach((item) => {
+  state.staged.forEach((item, index) => {
     const card = document.createElement("article");
     card.className = "staged-card";
     card.innerHTML = `
-      <p>${escapeHtml(trimText(item.content, 140))}</p>
+      <div class="staged-card-index">${state.staged.length - index}</div>
+      <div class="staged-card-body">
+        <p>${escapeHtml(item.content)}</p>
+        <time>${escapeHtml(formatTime(item.createdAt))}</time>
+      </div>
       <div class="item-actions">
-        <button type="button" data-action="remove-stage" data-id="${escapeHtml(item.id)}">移出</button>
+        <button type="button" data-action="remove-stage" data-id="${escapeHtml(item.id)}" aria-label="移出缓冲区" title="移出缓冲区">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
       </div>
     `;
     card.querySelector("button").addEventListener("click", async () => {
@@ -806,6 +912,22 @@ function renderStagedBuffer() {
     fragment.append(card);
   });
   els.stagingList.append(fragment);
+}
+
+function renderWorkspaceStatus() {
+  if (els.captureModelStatus) {
+    const ready = isConfigReadyForReport();
+    els.captureModelStatus.textContent = ready ? `${PROVIDER_LABELS[state.config.provider] || "模型"} 已就绪` : "模型未配置";
+    els.captureModelStatus.classList.toggle("ready", ready);
+  }
+  if (els.captureStoreStatus) els.captureStoreStatus.textContent = syncText();
+}
+
+function updateCaptureMeta() {
+  if (!els.captureCharCount) return;
+  const length = els.captureInput.value.length;
+  els.captureCharCount.textContent = `${length} 字`;
+  els.captureCharCount.classList.toggle("active", length > 0);
 }
 
 function renderModelStatus() {
@@ -889,6 +1011,52 @@ function renderMetrics() {
   els.planCount.textContent = count(active, "plan");
   els.ideaCount.textContent = count(active, "idea");
   els.recordCount.textContent = count(active, "record");
+}
+
+function renderOverviewDetails() {
+  if (!els.overviewDistribution || !els.overviewRecentList) return;
+  const active = state.items.filter((item) => item.status !== "done" && item.category !== "archive");
+  const categories = ["todo", "plan", "idea", "record"];
+  els.overviewActiveTotal.textContent = `${active.length} 条进行中`;
+  els.overviewDistribution.innerHTML = categories
+    .map((category) => {
+      const value = count(active, category);
+      const percent = active.length ? Math.round((value / active.length) * 100) : 0;
+      return `
+        <div class="overview-distribution-row" data-category="${category}">
+          <span>${CATEGORY_LABELS[category]}</span>
+          <div class="overview-distribution-track"><i style="width: ${percent}%"></i></div>
+          <strong>${value}</strong>
+        </div>
+      `;
+    })
+    .join("");
+
+  els.overviewRecentList.innerHTML = "";
+  const recent = state.items
+    .filter((item) => item.category !== "archive")
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))
+    .slice(0, 5);
+  if (!recent.length) {
+    els.overviewRecentList.append(emptyState("还没有最近记录"));
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  recent.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "overview-recent-item";
+    button.dataset.category = item.category;
+    button.innerHTML = `
+      <span class="overview-recent-mark" aria-hidden="true"></span>
+      <span class="overview-recent-copy"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(formatTime(item.updatedAt || item.createdAt))}</small></span>
+      <span class="category-badge">${CATEGORY_LABELS[item.category]}</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+    `;
+    button.addEventListener("click", () => openDetailModal(item));
+    fragment.append(button);
+  });
+  els.overviewRecentList.append(fragment);
 }
 
 function renderLists() {
@@ -1270,7 +1438,7 @@ async function saveBackendConfig() {
   try {
     const payload = await apiPost("/api/config", { config: state.config });
     if (payload.config) {
-      state.config = { ...DEFAULT_CONFIG, ...payload.config };
+      state.config = normalizeConfig(payload.config);
       persistConfig();
     }
   } catch (error) {
@@ -1283,7 +1451,7 @@ async function refreshBackendConfig() {
   try {
     const payload = await apiGet("/api/config");
     if (payload.config) {
-      state.config = { ...DEFAULT_CONFIG, ...payload.config };
+      state.config = normalizeConfig(payload.config);
       persistConfig();
       hydrateConfigForm();
     }
@@ -1309,9 +1477,9 @@ function itemCard(item) {
   card.dataset.category = item.category;
   if (state.selectedIds.has(item.id)) card.classList.add("selected");
   card.innerHTML = `
-    <label class="item-select">
+    <label class="item-select" title="选择此条记录">
       <input type="checkbox" data-action="select" data-id="${escapeHtml(item.id)}" ${state.selectedIds.has(item.id) ? "checked" : ""} />
-      <span>选择</span>
+      <span class="sr-only">选择</span>
     </label>
     <div class="item-head">
       <strong>${escapeHtml(item.title)}</strong>
@@ -1325,10 +1493,18 @@ function itemCard(item) {
       ${item.tags.map((tag) => `<span class="tag">#${escapeHtml(tag)}</span>`).join("")}
     </div>
     <div class="item-actions">
-      <button type="button" data-action="view" data-id="${escapeHtml(item.id)}">查看全文</button>
-      <button type="button" data-action="cycle" data-id="${escapeHtml(item.id)}">${item.status === "done" ? "重新激活" : "完成"}</button>
-      <button type="button" data-action="archive" data-id="${escapeHtml(item.id)}">归档</button>
-      <button type="button" data-action="delete" data-id="${escapeHtml(item.id)}">删除</button>
+      <button type="button" data-action="view" data-id="${escapeHtml(item.id)}" aria-label="查看详情" title="查看详情">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+      </button>
+      <button type="button" data-action="cycle" data-id="${escapeHtml(item.id)}" aria-label="${item.status === "done" ? "恢复" : "标记完成"}" title="${item.status === "done" ? "恢复" : "标记完成"}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m8 12 2.6 2.6L16.5 9" /></svg>
+      </button>
+      <button type="button" data-action="archive" data-id="${escapeHtml(item.id)}" aria-label="归档" title="归档">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v14H3zM2 3h20v4H2zM9 12h6" /></svg>
+      </button>
+      <button type="button" data-action="delete" data-id="${escapeHtml(item.id)}" aria-label="删除" title="删除">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V3h8v3M19 6l-1 15H6L5 6M10 11v5M14 11v5" /></svg>
+      </button>
       <select data-action="move" data-id="${escapeHtml(item.id)}" aria-label="移动分类">
         ${Object.entries(CATEGORY_LABELS)
           .filter(([key]) => key !== "archive")
@@ -1396,6 +1572,7 @@ async function handleItemAction(action, id, value) {
 
   try {
     if (action === "delete") {
+      if (!window.confirm(`确定删除“${item.title}”吗？此操作无法撤销。`)) return;
       await deleteItem(id);
       state.items = state.items.filter((entry) => entry.id !== id);
       state.selectedIds.delete(id);
@@ -1490,6 +1667,7 @@ function renderTimeline(items) {
   items.forEach((item) => {
     const entry = document.createElement("div");
     entry.className = "timeline-entry";
+    entry.dataset.category = item.category;
     entry.innerHTML = `
       <time>${formatTime(item.createdAt)} · ${CATEGORY_LABELS[item.category]}</time>
       <strong>${escapeHtml(item.title)}</strong>
@@ -1651,7 +1829,10 @@ function priorityLabel(priority) {
 function emptyState(text) {
   const node = document.createElement("div");
   node.className = "empty-state";
-  node.textContent = text;
+  node.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 13h4l2 3h4l2-3h4" /></svg>
+    <span>${escapeHtml(text)}</span>
+  `;
   return node;
 }
 
@@ -1665,6 +1846,7 @@ function exportData() {
     config: {
       ...state.config,
       apiKey: "",
+      apiKeys: {},
     },
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -1698,7 +1880,13 @@ async function importData(event) {
       await persistStaged();
     }
     if (payload.config) {
-      state.config = { ...state.config, ...payload.config, apiKey: state.config.apiKey };
+      const existingApiKeys = { ...state.config.apiKeys };
+      state.config = normalizeConfig({
+        ...state.config,
+        ...payload.config,
+        apiKey: existingApiKeys[payload.config.provider || state.config.provider] || "",
+        apiKeys: existingApiKeys,
+      });
       persistConfig();
       hydrateConfigForm();
     }
@@ -1732,11 +1920,17 @@ function hydrateConfigForm() {
 }
 
 function readConfigForm() {
+  const provider = els.providerSelect.value;
+  const apiKey = els.apiKeyInput.value.trim();
   return {
-    provider: els.providerSelect.value,
+    provider,
     baseUrl: els.baseUrlInput.value.trim(),
     model: els.modelInput.value.trim(),
-    apiKey: els.apiKeyInput.value.trim(),
+    apiKey,
+    apiKeys: {
+      ...state.config.apiKeys,
+      [provider]: apiKey,
+    },
   };
 }
 
@@ -1776,14 +1970,33 @@ async function persistStaged() {
 
 function loadConfig() {
   try {
-    const saved = { ...DEFAULT_CONFIG, ...JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}") };
-    if (saved.provider === "local") return DEFAULT_CONFIG;
-    if (!PROVIDER_DEFAULTS[saved.provider]) return { ...saved, provider: "custom" };
-    return saved;
+    return normalizeConfig(JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}"));
   } catch (error) {
     console.warn("Failed to load config", error);
-    return DEFAULT_CONFIG;
+    return normalizeConfig();
   }
+}
+
+function normalizeConfig(rawConfig = {}) {
+  const raw = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+  let provider = raw.provider === "local" ? DEFAULT_CONFIG.provider : raw.provider || DEFAULT_CONFIG.provider;
+  if (!PROVIDER_DEFAULTS[provider]) provider = "custom";
+
+  const hasApiKeyMap = raw.apiKeys && typeof raw.apiKeys === "object" && !Array.isArray(raw.apiKeys);
+  const apiKeys = hasApiKeyMap
+    ? Object.fromEntries(Object.entries(raw.apiKeys).map(([key, value]) => [key, String(value || "")]))
+    : {};
+  if (!hasApiKeyMap && raw.apiKey) apiKeys[provider] = String(raw.apiKey);
+
+  return {
+    ...DEFAULT_CONFIG,
+    ...raw,
+    provider,
+    baseUrl: String(raw.baseUrl || PROVIDER_DEFAULTS[provider].baseUrl),
+    model: String(raw.model || PROVIDER_DEFAULTS[provider].model),
+    apiKey: apiKeys[provider] || "",
+    apiKeys,
+  };
 }
 
 function persistConfig() {
@@ -1805,7 +2018,171 @@ function loadUiConfig() {
 }
 
 function validView(value) {
-  return ["capture", "calendar", "overview", "report", "dashboard"].includes(value) ? value : "capture";
+  return ["capture", "calendar", "overview", "report", "dashboard", "logs"].includes(value) ? value : "capture";
+}
+
+function loadLogs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LOG_KEY) || "[]");
+    return Array.isArray(saved) ? saved.slice(0, MAX_LOG_ENTRIES).map(normalizeLogEntry) : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function normalizeLogEntry(entry = {}) {
+  return {
+    id: String(entry.id || crypto.randomUUID()),
+    level: ["error", "warn", "info"].includes(entry.level) ? entry.level : "info",
+    source: sanitizeLogText(entry.source || "应用"),
+    message: sanitizeLogText(entry.message || "未知日志"),
+    details: sanitizeLogText(entry.details || ""),
+    createdAt: entry.createdAt || new Date().toISOString(),
+  };
+}
+
+function persistLogs() {
+  try {
+    localStorage.setItem(LOG_KEY, JSON.stringify(state.logs.slice(0, MAX_LOG_ENTRIES)));
+  } catch (_error) {
+    // Logging must never interrupt the main workflow.
+  }
+}
+
+function recordLog(level, source, message, details = "") {
+  const entry = normalizeLogEntry({ level, source, message, details, createdAt: new Date().toISOString() });
+  state.logs = [entry, ...state.logs].slice(0, MAX_LOG_ENTRIES);
+  persistLogs();
+  if (els.logList) renderLogs();
+}
+
+async function refreshBackendLogs() {
+  if (!window.ideahubDesktop?.isDesktop) return;
+  try {
+    const payload = await apiGet("/api/logs");
+    const backendLogs = Array.isArray(payload.logs) ? payload.logs.map(normalizeLogEntry) : [];
+    const merged = new Map([...backendLogs, ...state.logs].map((entry) => [entry.id, entry]));
+    state.logs = [...merged.values()]
+      .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
+      .slice(0, MAX_LOG_ENTRIES);
+    persistLogs();
+  } catch (error) {
+    console.warn("读取桌面日志失败", error);
+  }
+}
+
+function installGlobalLogging() {
+  const originalError = console.error.bind(console);
+  const originalWarn = console.warn.bind(console);
+  console.error = (...args) => {
+    originalError(...args);
+    recordLog("error", "控制台", logMessage(args), logDetails(args));
+  };
+  console.warn = (...args) => {
+    originalWarn(...args);
+    recordLog("warn", "控制台", logMessage(args), logDetails(args));
+  };
+  window.addEventListener("error", (event) => {
+    recordLog("error", "页面错误", event.message || "页面运行错误", event.error?.stack || `${event.filename || ""}:${event.lineno || 0}`);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    recordLog("error", "未处理 Promise", reason?.message || String(reason || "未知异步错误"), reason?.stack || "");
+  });
+  recordLog("info", "应用", "IdeaHub 已启动", window.ideahubDesktop?.isDesktop ? "桌面模式" : "浏览器模式");
+}
+
+function logMessage(args) {
+  const first = args.find((value) => typeof value === "string") || args[0];
+  return sanitizeLogText(first instanceof Error ? first.message : stringifyLogValue(first));
+}
+
+function logDetails(args) {
+  return sanitizeLogText(
+    args
+      .map((value) => (value instanceof Error ? value.stack || value.message : stringifyLogValue(value)))
+      .join("\n"),
+  );
+}
+
+function stringifyLogValue(value) {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(
+      value,
+      (key, nestedValue) => (/api_?keys?|authorization|access_?token|secret/i.test(key) ? "[已隐藏]" : nestedValue),
+      2,
+    );
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+function sanitizeLogText(value) {
+  return String(value || "")
+    .replace(/(authorization\s*[:=]\s*["']?bearer\s+)[^\s"']+/gi, "$1[已隐藏]")
+    .replace(/(["']?apiKey["']?\s*[:=]\s*["'])[^"']+(["'])/gi, "$1[已隐藏]$2")
+    .replace(/\b(sk-[A-Za-z0-9_-]{12,})\b/g, "sk-[已隐藏]")
+    .slice(0, 12000);
+}
+
+function renderLogs() {
+  if (!els.logList) return;
+  const level = state.logLevelFilter;
+  const logs = level === "all" ? state.logs : state.logs.filter((entry) => entry.level === level);
+  els.logCount.textContent = `${state.logs.length} 条日志`;
+  els.logLevelFilter.value = level;
+  els.copyLogsBtn.disabled = !state.logs.length;
+  els.clearLogsBtn.disabled = !state.logs.length;
+  els.logList.innerHTML = "";
+  if (!logs.length) {
+    els.logList.append(emptyState(level === "all" ? "暂无运行日志" : "该级别暂无日志"));
+    return;
+  }
+  const labels = { error: "错误", warn: "警告", info: "信息" };
+  const fragment = document.createDocumentFragment();
+  logs.forEach((entry) => {
+    const article = document.createElement("article");
+    article.className = "log-entry";
+    article.dataset.level = entry.level;
+    article.innerHTML = `
+      <div>
+        <span class="log-level">${labels[entry.level]}</span>
+        <time class="log-time" datetime="${escapeHtml(entry.createdAt)}">${escapeHtml(formatLogTime(entry.createdAt))}</time>
+        <span class="log-source">${escapeHtml(entry.source)}</span>
+      </div>
+      <div>
+        <p class="log-message">${escapeHtml(entry.message)}</p>
+        ${entry.details && entry.details !== entry.message ? `<pre class="log-details">${escapeHtml(entry.details)}</pre>` : ""}
+      </div>
+    `;
+    fragment.append(article);
+  });
+  els.logList.append(fragment);
+}
+
+async function copyLogs() {
+  const text = state.logs
+    .map((entry) => `[${entry.createdAt}] [${entry.level.toUpperCase()}] [${entry.source}] ${entry.message}${entry.details ? `\n${entry.details}` : ""}`)
+    .join("\n\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("日志已复制");
+  } catch (error) {
+    console.error("复制日志失败", error);
+    showToast("复制失败，请在日志中手动选择");
+  }
+}
+
+function formatLogTime(value) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
 }
 
 function persistUiConfig() {
@@ -1843,6 +2220,7 @@ async function apiDelete(path) {
 async function parseApiResponse(response) {
   if (!response.ok) {
     const message = await response.text();
+    recordLog("error", "API 请求", `${response.status} ${response.statusText || "请求失败"}`, `${response.url}\n${message}`);
     throw new Error(message || `Request failed: ${response.status}`);
   }
   if (response.status === 204) return {};
@@ -1850,7 +2228,9 @@ async function parseApiResponse(response) {
 }
 
 function setBusy(isBusy) {
-  els.captureForm.querySelector("button[type='submit']").disabled = isBusy;
+  state.busy = isBusy;
+  document.body.classList.toggle("is-busy", isBusy);
+  els.captureSubmitBtn.disabled = isBusy;
   els.commitBufferBtn.disabled = isBusy || !state.staged.length;
   els.clearBufferBtn.disabled = isBusy || !state.staged.length;
   els.testModelBtn.disabled = isBusy;
