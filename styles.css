@@ -1223,6 +1223,33 @@ body.desktop-shell .install-button {
   flex-wrap: wrap;
 }
 
+/* Onboarding demo-data notice. Lives inside .section-heading (a flex row), so it
+   has to claim a full line of its own instead of squeezing next to the title. */
+.sample-notice {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.sample-notice p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sample-notice[hidden] {
+  display: none;
+}
+
 .bulk-actions span {
   display: inline-flex;
   align-items: center;

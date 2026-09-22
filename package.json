@@ -17,9 +17,17 @@
     "build": "electron-builder",
     "build:mac": "electron-builder --mac dmg zip",
     "build:win": "electron-builder --win nsis portable",
-    "build:linux": "electron-builder --linux AppImage deb"
+    "build:linux": "electron-builder --linux AppImage deb",
+    "build:www": "node scripts/build-www.mjs",
+    "android:add": "npm run build:www && cap add android",
+    "android:sync": "npm run build:www && cap sync android",
+    "android:open": "cap open android",
+    "android:apk": "npm run build:www && cap sync android && cd android && ./gradlew assembleDebug"
   },
   "devDependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/cli": "^6.2.2",
+    "@capacitor/core": "^6.2.2",
     "electron": "^32.3.3",
     "electron-builder": "^25.1.8"
   },

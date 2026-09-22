@@ -326,6 +326,8 @@ const els = {
   calendarTodayBtn: document.querySelector("#calendarTodayBtn"),
   calendarClearBtn: document.querySelector("#calendarClearBtn"),
   selectionCount: document.querySelector("#selectionCount"),
+  sampleNotice: document.querySelector("#sampleNotice"),
+  clearSamplesBtn: document.querySelector("#clearSamplesBtn"),
   selectAllBtn: document.querySelector("#selectAllBtn"),
   clearSelectionBtn: document.querySelector("#clearSelectionBtn"),
   deleteSelectedBtn: document.querySelector("#deleteSelectedBtn"),
@@ -380,6 +382,12 @@ function initDesktopShell() {
 }
 
 async function bootstrapData() {
+  // Standalone builds (the Android app) ship the UI without any HTTP service,
+  // so skip the probe entirely instead of firing requests that cannot succeed.
+  if (isStandaloneBuild()) {
+    useLocalOnlyStorage();
+    return;
+  }
   try {
     const health = await apiGet("/api/health");
     if (health.desktop && health.config) {
@@ -407,6 +415,20 @@ async function bootstrapData() {
   } catch (error) {
     console.info("Backend unavailable, using browser storage.", error);
   }
+  useLocalOnlyStorage();
+}
+
+/** Detect builds that ship without any HTTP service (the Android app). */
+function isStandaloneBuild() {
+  // Capacitor injects this into the WebView before the page scripts run.
+  if (window.Capacitor?.isNativePlatform?.()) return true;
+  // Explicit opt-in for static hosting and local testing of that mode.
+  if (new URLSearchParams(location.search).get("standalone") === "1") return true;
+  return location.protocol === "file:";
+}
+
+/** Everything is persisted in the browser/WebView, so no API calls are made. */
+function useLocalOnlyStorage() {
   state.backend.available = false;
   state.backend.store = "browser";
   state.backend.researchSupported = false;
@@ -643,6 +665,15 @@ function bindEvents() {
   els.commitBufferBtn.addEventListener("click", commitStagedBuffer);
   els.clearBufferBtn.addEventListener("click", clearStagedBuffer);
 
+  els.clearSamplesBtn?.addEventListener("click", async () => {
+    const removed = state.items.filter(isSampleItem).length;
+    if (!removed) return;
+    if (!window.confirm(`确定清除这 ${removed} 条演示数据吗？此操作无法撤销。`)) return;
+    await clearSampleItems();
+    render();
+    showToast(`已清除 ${removed} 条演示数据`);
+  });
+
   els.clearDoneBtn.addEventListener("click", async () => {
     const doneItems = state.items.filter((item) => item.status === "done");
     for (const item of doneItems) {
@@ -745,6 +776,14 @@ function updateConnectionStatus() {
 }
 
 async function createItems(content, source) {
+  const items = await classifyToItems(content, source);
+  // Any successful creation means real content now exists, so retire the
+  // onboarding demo entries regardless of which caller triggered it.
+  if (items.length) dismissSampleItemsIfReal();
+  return items;
+}
+
+async function classifyToItems(content, source) {
   if (state.backend.available) {
     const payload = await apiPost("/api/items", { content, source: source || "缓冲区", config: state.config });
     const items = Array.isArray(payload.items) ? payload.items : [payload.item];
@@ -787,6 +826,9 @@ async function commitStagedBuffer() {
       const content = batch.map((item, itemIndex) => `【缓冲 ${index * COMMIT_BATCH_SIZE + itemIndex + 1}】\n${item.content}`).join("\n\n---\n\n");
       const items = await createItems(content, "缓冲区");
       state.items.unshift(...items.map(normalizeItem));
+      // Real content now exists, so the onboarding demo entries are no longer
+      // useful and should not keep mixing into the user's own records.
+      dismissSampleItemsIfReal();
       batch.forEach((item) => committedIds.add(item.id));
       createdCount += items.length;
       state.staged = state.staged.filter((item) => !committedIds.has(item.id));
@@ -1771,6 +1813,14 @@ function renderBulkActions() {
   els.selectAllBtn.disabled = !visibleSelectableCount || allVisibleSelected;
   els.clearSelectionBtn.disabled = !selectedCount;
   els.deleteSelectedBtn.disabled = !selectedCount;
+  if (els.sampleNotice) {
+    const sampleCount = state.items.filter(isSampleItem).length;
+    els.sampleNotice.hidden = sampleCount === 0 || state.backend.available;
+    if (sampleCount) {
+      els.sampleNotice.querySelector("p").textContent =
+        `当前 ${sampleCount} 条是演示数据，用来展示界面。清除后不会恢复。`;
+    }
+  }
 }
 
 function pruneSelection() {
@@ -2683,7 +2733,40 @@ function loadLocalItems() {
   } catch (error) {
     console.warn("Failed to load saved items", error);
   }
-  return sampleItems;
+  // First run: seed the demo entries into storage so they behave like normal
+  // records. Keeping them only in memory made them impossible to delete — they
+  // reappeared on every reload, which reads as phantom data for a new user.
+  return seedSampleItems();
+}
+
+function seedSampleItems() {
+  const seeded = sampleItems.map(normalizeItem);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+  } catch (error) {
+    console.warn("Failed to seed sample items", error);
+  }
+  return seeded;
+}
+
+function isSampleItem(item) {
+  return String(item?.id || "").startsWith("sample-");
+}
+
+/** Drop the demo entries once real content exists, so they never linger. */
+function dismissSampleItemsIfReal() {
+  if (!state.items.some(isSampleItem)) return false;
+  if (!state.items.some((item) => !isSampleItem(item))) return false;
+  clearSampleItems();
+  return true;
+}
+
+function clearSampleItems() {
+  state.items = state.items.filter((item) => !isSampleItem(item));
+  state.selectedIds.forEach((id) => {
+    if (!state.items.some((item) => item.id === id)) state.selectedIds.delete(id);
+  });
+  return persistItems();
 }
 
 function loadLocalStaged() {
@@ -2762,10 +2845,15 @@ function loadUiConfig() {
 }
 
 function defaultModules() {
-  return MODULES.reduce((accumulator, module) => {
+  const modules = MODULES.reduce((accumulator, module) => {
     accumulator[module.id] = true;
     return accumulator;
   }, {});
+  // Research Radar needs a filesystem service, which standalone builds do not
+  // ship. Hide it by default rather than showing a module that cannot work;
+  // it stays togglable for anyone who points the app at a server later.
+  if (isStandaloneBuild()) modules.research = false;
+  return modules;
 }
 
 function normalizeModules(value) {
