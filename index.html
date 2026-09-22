@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#23674c" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="IdeaHub" />
@@ -73,6 +73,7 @@
         <button type="button" data-view="calendar"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5h18v16H3zM16 3v4M8 3v4M3 10h18" /></svg></span><span>日历</span></button>
         <button type="button" data-view="overview"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 13h6V4H4zM14 20h6v-9h-6zM14 7h6V4h-6zM4 20h6v-3H4z" /></svg></span><span>概览</span></button>
         <button type="button" data-view="report"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8" /></svg></span><span>汇报</span></button>
+        <button type="button" data-view="research"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 3h11l5 5v13H4zM14 3v6h6M8 13h8M8 17h5" /><path d="m17 13 1.2 2.4L21 16l-2 1.8.5 2.7-2.5-1.3-2.5 1.3.5-2.7-2-1.8 2.8-.6Z" /></svg></span><span>研究雷达</span></button>
         <button type="button" data-view="dashboard"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3h7v18H3zM14 3h7v8h-7zM14 15h7v6h-7z" /></svg></span><span>分类看板</span></button>
         <div class="nav-label nav-label-system">系统</div>
         <button type="button" data-view="logs"><span class="nav-glyph" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM8 9h8M8 13h8M8 17h5" /></svg></span><span>运行日志</span></button>
@@ -318,6 +319,85 @@
         </section>
       </section>
 
+      <div class="section-heading research-heading">
+        <div>
+          <span>研究雷达</span>
+          <h2>从每日简报中发现可推进的研究线索</h2>
+        </div>
+        <span id="researchSyncStatus" class="research-sync-status">尚未连接简报目录</span>
+      </div>
+      <section class="research-workspace" aria-label="研究简报分析">
+        <section class="research-source-band">
+          <div class="research-source-copy">
+            <span class="research-kicker">本地来源</span>
+            <h3>简报存档目录</h3>
+            <p>扫描只在本机完成。勾选文档并点击 AI 提取后，所选正文才会发送给当前模型服务。</p>
+          </div>
+          <div class="research-folder-controls">
+            <label for="researchFolderInput">目录路径</label>
+            <div class="research-folder-row">
+              <input id="researchFolderInput" type="text" autocomplete="off" placeholder="选择或输入每日简报所在目录" />
+              <button id="researchChooseFolderBtn" class="secondary-button" type="button">选择目录</button>
+              <button id="researchApplyFolderBtn" class="secondary-button" type="button">应用</button>
+              <button id="researchScanBtn" class="primary-button" type="button">扫描变化</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="research-metrics" aria-label="研究发现统计">
+          <article><span>文章 Idea</span><strong id="researchArticleCount">0</strong><small>可形成文章的选题</small></article>
+          <article><span>可借鉴思路</span><strong id="researchMethodCount">0</strong><small>可迁移的方法设计</small></article>
+          <article><span>实验思路</span><strong id="researchExperimentCount">0</strong><small>可验证的实验方案</small></article>
+          <article><span>证据索引</span><strong id="researchEvidenceCount">0</strong><small>观点与来源的关联</small></article>
+        </section>
+
+        <div class="research-layout">
+          <section class="module research-documents-module">
+            <div class="module-title research-module-title">
+              <div><h2>来源文档</h2><span id="researchDocumentCount">0 份文档</span></div>
+              <button id="researchSelectPendingBtn" class="text-button" type="button">选择待分析</button>
+            </div>
+            <div class="research-document-actions">
+              <span id="researchSelectionCount">已选 0 份</span>
+              <button id="researchSelectAllBtn" class="text-button" type="button" disabled>一键全选</button>
+              <button id="researchClearSelectionBtn" class="text-button" type="button" disabled>取消选择</button>
+              <button id="researchAnalyzeBtn" class="primary-button" type="button" disabled>
+                <span class="button-spinner" aria-hidden="true"></span>
+                <span>AI 提取所选</span>
+              </button>
+            </div>
+            <div id="researchMaintenance" class="research-maintenance" hidden>
+              <p id="researchMaintenanceHint" class="research-maintenance-hint"></p>
+              <div class="research-maintenance-actions">
+                <button id="researchRecoverBtn" class="secondary-button" type="button" hidden>重新匹配文件</button>
+                <button id="researchClearMissingBtn" class="text-button danger" type="button" hidden>清理失效条目</button>
+                <button id="researchClearPendingBtn" class="text-button danger" type="button" hidden>清空待分析</button>
+                <button id="researchClearAllBtn" class="text-button danger" type="button" hidden>清空全部索引</button>
+              </div>
+            </div>
+            <div id="researchProgress" class="commit-progress" role="status" aria-live="polite" hidden>
+              <div class="commit-progress-track"><span></span></div>
+              <p>准备分析</p>
+            </div>
+            <div id="researchDocumentList" class="research-document-list"></div>
+          </section>
+
+          <section class="module research-insights-module">
+            <div class="research-insight-toolbar">
+              <div class="research-tabs" role="tablist" aria-label="发现类型">
+                <button class="active" type="button" data-research-filter="all">全部</button>
+                <button type="button" data-research-filter="article">文章 Idea</button>
+                <button type="button" data-research-filter="method">借鉴思路</button>
+                <button type="button" data-research-filter="experiment">实验思路</button>
+                <button type="button" data-research-filter="evidence">证据索引</button>
+              </div>
+              <input id="researchSearchInput" type="search" placeholder="搜索标题、观点、标签或来源" aria-label="搜索研究发现" />
+            </div>
+            <div id="researchInsightList" class="research-insight-list"></div>
+          </section>
+        </div>
+      </section>
+
       <div class="section-heading dashboard-heading">
         <div>
           <span>大屏</span>
@@ -504,6 +584,13 @@
                 </select>
               </label>
             </div>
+          </div>
+          <div class="settings-section settings-modules">
+            <div class="settings-section-head">
+              <span aria-hidden="true">03</span>
+              <div><h3>功能模块</h3><p>只保留你需要的模块，隐藏其余入口</p></div>
+            </div>
+            <div class="module-toggle-list" id="moduleToggleList"></div>
           </div>
           <div class="model-actions">
             <button id="saveConfigBtn" class="secondary-button" type="button">保存配置</button>

@@ -15,6 +15,20 @@ const CATEGORY_LABELS = {
   archive: "归档",
 };
 
+/* Module registry: every top-level view is a module the user can show or hide.
+   Order here drives the order of both the settings list and the navigation. */
+const MODULES = [
+  { id: "capture", label: "收集箱", description: "快速记录、缓冲区与条目管理", locked: true },
+  { id: "calendar", label: "日历", description: "按日期查看和安排记录" },
+  { id: "overview", label: "概览", description: "分类统计与最近动态" },
+  { id: "report", label: "汇报", description: "按周期生成工作总结与汇报" },
+  { id: "research", label: "研究雷达", description: "扫描简报目录并提取研究线索" },
+  { id: "dashboard", label: "分类看板", description: "按分类和状态浏览全部条目" },
+  { id: "logs", label: "运行日志", description: "查看应用运行与错误记录" },
+];
+
+const MODULE_IDS = MODULES.map((module) => module.id);
+
 const CATEGORY_COLORS = {
   todo: "#c25462",
   plan: "#5369b1",
@@ -43,6 +57,20 @@ const REPORT_TONE_LABELS = {
   detailed: "详细完整",
   academic: "学术导师风",
   casual: "自然口语",
+};
+
+const RESEARCH_TYPE_LABELS = {
+  article: "文章 Idea",
+  method: "可借鉴思路",
+  experiment: "实验思路",
+  evidence: "证据索引",
+};
+
+const RESEARCH_SUPPORT_LABELS = {
+  direct: "直接支持",
+  indirect: "间接支持",
+  background: "背景参考",
+  counter: "反面证据",
 };
 
 const DEFAULT_CONFIG = {
@@ -175,11 +203,17 @@ const state = {
   selectedDate: "",
   busy: false,
   commitProgress: null,
+  research: normalizeResearchStore({}),
+  researchSelectedDocumentIds: new Set(),
+  researchFilter: "all",
+  researchQuery: "",
+  researchProgress: null,
   backend: {
     available: false,
     store: "browser",
     modelConfigured: false,
     memosConfigured: false,
+    researchSupported: false,
   },
 };
 
@@ -202,6 +236,7 @@ const els = {
   apiKeyInput: document.querySelector("#apiKeyInput"),
   providerHelp: document.querySelector("#providerHelp"),
   layoutModeSelect: document.querySelector("#layoutModeSelect"),
+  moduleToggleList: document.querySelector("#moduleToggleList"),
   themeModeSelect: document.querySelector("#themeModeSelect"),
   saveConfigBtn: document.querySelector("#saveConfigBtn"),
   testModelBtn: document.querySelector("#testModelBtn"),
@@ -227,6 +262,31 @@ const els = {
   generateReportBtn: document.querySelector("#generateReportBtn"),
   copyReportBtn: document.querySelector("#copyReportBtn"),
   downloadReportBtn: document.querySelector("#downloadReportBtn"),
+  researchSyncStatus: document.querySelector("#researchSyncStatus"),
+  researchFolderInput: document.querySelector("#researchFolderInput"),
+  researchChooseFolderBtn: document.querySelector("#researchChooseFolderBtn"),
+  researchApplyFolderBtn: document.querySelector("#researchApplyFolderBtn"),
+  researchScanBtn: document.querySelector("#researchScanBtn"),
+  researchArticleCount: document.querySelector("#researchArticleCount"),
+  researchMethodCount: document.querySelector("#researchMethodCount"),
+  researchExperimentCount: document.querySelector("#researchExperimentCount"),
+  researchEvidenceCount: document.querySelector("#researchEvidenceCount"),
+  researchDocumentCount: document.querySelector("#researchDocumentCount"),
+  researchSelectionCount: document.querySelector("#researchSelectionCount"),
+  researchSelectPendingBtn: document.querySelector("#researchSelectPendingBtn"),
+  researchSelectAllBtn: document.querySelector("#researchSelectAllBtn"),
+  researchClearSelectionBtn: document.querySelector("#researchClearSelectionBtn"),
+  researchAnalyzeBtn: document.querySelector("#researchAnalyzeBtn"),
+  researchMaintenance: document.querySelector("#researchMaintenance"),
+  researchMaintenanceHint: document.querySelector("#researchMaintenanceHint"),
+  researchRecoverBtn: document.querySelector("#researchRecoverBtn"),
+  researchClearMissingBtn: document.querySelector("#researchClearMissingBtn"),
+  researchClearPendingBtn: document.querySelector("#researchClearPendingBtn"),
+  researchClearAllBtn: document.querySelector("#researchClearAllBtn"),
+  researchProgress: document.querySelector("#researchProgress"),
+  researchDocumentList: document.querySelector("#researchDocumentList"),
+  researchSearchInput: document.querySelector("#researchSearchInput"),
+  researchInsightList: document.querySelector("#researchInsightList"),
   priorityList: document.querySelector("#priorityList"),
   todoList: document.querySelector("#todoList"),
   planList: document.querySelector("#planList"),
@@ -309,11 +369,16 @@ async function bootstrapData() {
       store: health.store || "file",
       modelConfigured: Boolean(health.modelConfigured),
       memosConfigured: Boolean(health.memosConfigured),
+      researchSupported: Boolean(health.researchSupported || health.desktop),
     };
     const payload = await apiGet("/api/items");
     state.items = Array.isArray(payload.items) ? payload.items.map(normalizeItem) : [];
     const stagedPayload = await apiGet("/api/staged");
     state.staged = Array.isArray(stagedPayload.items) ? stagedPayload.items.map(normalizeStagedItem) : [];
+    if (state.backend.researchSupported) {
+      const researchPayload = await apiGet("/api/research");
+      state.research = normalizeResearchStore(researchPayload.research || {});
+    }
     await refreshBackendLogs();
     return;
   } catch (error) {
@@ -321,6 +386,7 @@ async function bootstrapData() {
   }
   state.backend.available = false;
   state.backend.store = "browser";
+  state.backend.researchSupported = false;
   state.items = loadLocalItems();
   state.staged = loadLocalStaged();
 }
@@ -436,6 +502,58 @@ function bindEvents() {
   els.generateReportBtn.addEventListener("click", generateReport);
   els.copyReportBtn.addEventListener("click", copyReport);
   els.downloadReportBtn.addEventListener("click", downloadReport);
+
+  els.researchChooseFolderBtn.addEventListener("click", chooseResearchFolder);
+  els.researchApplyFolderBtn.addEventListener("click", applyResearchFolder);
+  els.researchScanBtn.addEventListener("click", scanResearchFolder);
+  els.researchFolderInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyResearchFolder();
+    }
+  });
+  els.researchSelectPendingBtn.addEventListener("click", () => {
+    state.research.documents
+      .filter((document) => document.status === "pending" || document.status === "failed")
+      .forEach((document) => state.researchSelectedDocumentIds.add(document.id));
+    renderResearch();
+  });
+  els.researchSelectAllBtn.addEventListener("click", () => {
+    state.research.documents
+      .filter((document) => document.status !== "missing")
+      .forEach((document) => state.researchSelectedDocumentIds.add(document.id));
+    renderResearch();
+  });
+  els.researchClearSelectionBtn.addEventListener("click", () => {
+    state.researchSelectedDocumentIds.clear();
+    renderResearch();
+  });
+  els.researchAnalyzeBtn.addEventListener("click", analyzeSelectedResearchDocuments);
+  els.researchRecoverBtn.addEventListener("click", () => runResearchMaintenance("/api/research/recover", {}, "重新匹配简报文件"));
+  els.researchClearMissingBtn.addEventListener("click", () =>
+    runResearchMaintenance("/api/research/clear", { scope: "missing" }, "清理源文件缺失的条目", "将移除所有源文件已不存在的索引条目，确定继续吗？"),
+  );
+  els.researchClearPendingBtn.addEventListener("click", () =>
+    runResearchMaintenance("/api/research/clear", { scope: "pending" }, "清空待分析列表", "将移除所有待分析的索引条目，确定继续吗？"),
+  );
+  els.researchClearAllBtn.addEventListener("click", () =>
+    runResearchMaintenance(
+      "/api/research/clear",
+      { scope: "all" },
+      "清空简报索引",
+      "将清空全部简报索引和已提取的研究发现，此操作不可撤销，确定继续吗？",
+    ),
+  );
+  els.researchSearchInput.addEventListener("input", () => {
+    state.researchQuery = els.researchSearchInput.value.trim().toLowerCase();
+    renderResearchInsights();
+  });
+  document.querySelectorAll("[data-research-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.researchFilter = button.dataset.researchFilter || "all";
+      renderResearchInsights();
+    });
+  });
 
   els.calendarPrevBtn.addEventListener("click", () => {
     state.calendarDate = addMonths(state.calendarDate, -1);
@@ -836,6 +954,69 @@ function normalizeStagedItem(raw) {
   };
 }
 
+function normalizeResearchDocument(raw = {}) {
+  return {
+    id: String(raw.id || crypto.randomUUID()),
+    path: String(raw.path || ""),
+    relativePath: String(raw.relativePath || raw.path || ""),
+    title: String(raw.title || "未命名简报"),
+    date: normalizeDueDate(raw.date),
+    hash: String(raw.hash || ""),
+    size: Number(raw.size || 0),
+    modifiedAt: String(raw.modifiedAt || ""),
+    status: ["pending", "analyzed", "failed", "missing"].includes(raw.status) ? raw.status : "pending",
+    insightCount: Math.max(0, Number(raw.insightCount || 0)),
+    analyzedAt: String(raw.analyzedAt || ""),
+    lastError: String(raw.lastError || ""),
+    truncated: Boolean(raw.truncated),
+  };
+}
+
+function normalizeResearchInsight(raw = {}) {
+  const type = RESEARCH_TYPE_LABELS[raw.type] ? raw.type : "method";
+  const list = (value, max = 10) => (Array.isArray(value) ? value.map(String).filter(Boolean).slice(0, max) : []);
+  return {
+    id: String(raw.id || crypto.randomUUID()),
+    type,
+    title: String(raw.title || "未命名研究发现"),
+    summary: String(raw.summary || ""),
+    thesis: String(raw.thesis || ""),
+    application: String(raw.application || ""),
+    hypothesis: String(raw.hypothesis || ""),
+    setup: String(raw.setup || ""),
+    expectedOutcome: String(raw.expectedOutcome || ""),
+    claim: String(raw.claim || ""),
+    rationale: String(raw.rationale || ""),
+    supportLevel: RESEARCH_SUPPORT_LABELS[raw.supportLevel] ? raw.supportLevel : "background",
+    outline: list(raw.outline),
+    variables: list(raw.variables),
+    metrics: list(raw.metrics),
+    risks: list(raw.risks),
+    tags: list(raw.tags, 6),
+    sourceSection: String(raw.sourceSection || ""),
+    sourceExcerpt: String(raw.sourceExcerpt || ""),
+    sourceDocumentId: String(raw.sourceDocumentId || ""),
+    sourceTitle: String(raw.sourceTitle || ""),
+    sourcePath: String(raw.sourcePath || ""),
+    sourceRelativePath: String(raw.sourceRelativePath || ""),
+    sourceDate: normalizeDueDate(raw.sourceDate),
+    sourceHash: String(raw.sourceHash || ""),
+    status: raw.status === "transferred" ? "transferred" : "active",
+    stale: Boolean(raw.stale),
+    createdAt: String(raw.createdAt || new Date().toISOString()),
+    updatedAt: String(raw.updatedAt || raw.createdAt || new Date().toISOString()),
+  };
+}
+
+function normalizeResearchStore(raw = {}) {
+  return {
+    folderPath: String(raw.folderPath || ""),
+    documents: Array.isArray(raw.documents) ? raw.documents.map(normalizeResearchDocument) : [],
+    insights: Array.isArray(raw.insights) ? raw.insights.map(normalizeResearchInsight) : [],
+    updatedAt: String(raw.updatedAt || ""),
+  };
+}
+
 function render() {
   pruneSelection();
   applyThemeMode();
@@ -847,6 +1028,7 @@ function render() {
   renderMetrics();
   renderOverviewDetails();
   renderCalendar();
+  renderResearch();
   updateReportRangeSummary();
   renderLists();
   renderLogs();
@@ -870,12 +1052,498 @@ function normalizeThemeMode(value) {
 
 function applyLayoutMode() {
   const layoutMode = state.ui.layoutMode === "nav" ? "nav" : "single";
+  // A view the user disabled must never stay active, otherwise the app would
+  // render a hidden panel with no navigation entry pointing at it.
+  state.ui.activeView = validView(state.ui.activeView);
   document.body.classList.toggle("layout-nav", layoutMode === "nav");
   document.body.dataset.activeView = state.ui.activeView || "capture";
-  els.appNav.hidden = layoutMode !== "nav";
+  const visibleButtons = [];
   els.appNav.querySelectorAll("button").forEach((button) => {
-    button.classList.toggle("active", button.dataset.view === state.ui.activeView);
+    const moduleId = button.dataset.view;
+    const enabled = MODULE_IDS.includes(moduleId) ? state.ui.modules[moduleId] : true;
+    button.hidden = !enabled;
+    button.classList.toggle("active", moduleId === state.ui.activeView);
+    if (enabled) visibleButtons.push(button);
   });
+  // Hiding every section would leave an empty navigation bar behind.
+  els.appNav.hidden = layoutMode !== "nav" || visibleButtons.length === 0;
+}
+
+function renderResearch() {
+  const research = state.research;
+  const availableDocumentIds = new Set(research.documents.map((document) => document.id));
+  for (const id of state.researchSelectedDocumentIds) {
+    if (!availableDocumentIds.has(id)) state.researchSelectedDocumentIds.delete(id);
+  }
+
+  if (document.activeElement !== els.researchFolderInput) els.researchFolderInput.value = research.folderPath;
+  const supported = state.backend.available && state.backend.researchSupported;
+  const hasFolder = Boolean(research.folderPath);
+  const insightCounts = { article: 0, method: 0, experiment: 0, evidence: 0 };
+  research.insights.filter((insight) => !insight.stale).forEach((insight) => {
+    insightCounts[insight.type] += 1;
+  });
+  els.researchArticleCount.textContent = insightCounts.article;
+  els.researchMethodCount.textContent = insightCounts.method;
+  els.researchExperimentCount.textContent = insightCounts.experiment;
+  els.researchEvidenceCount.textContent = insightCounts.evidence;
+  els.researchDocumentCount.textContent = `${research.documents.length} 份文档`;
+  els.researchSelectionCount.textContent = `已选 ${state.researchSelectedDocumentIds.size} 份`;
+  els.researchChooseFolderBtn.hidden = !window.ideahubDesktop?.chooseResearchFolder;
+  els.researchChooseFolderBtn.disabled = state.busy || !supported;
+  els.researchApplyFolderBtn.disabled = state.busy || !supported;
+  els.researchScanBtn.disabled = state.busy || !supported || !hasFolder;
+  els.researchSelectPendingBtn.disabled = state.busy || !research.documents.some((document) => ["pending", "failed"].includes(document.status));
+  {
+    const selectableDocuments = research.documents.filter((document) => document.status !== "missing");
+    const allSelectableSelected = selectableDocuments.length > 0 && selectableDocuments.every((document) => state.researchSelectedDocumentIds.has(document.id));
+    els.researchSelectAllBtn.disabled = state.busy || !selectableDocuments.length || allSelectableSelected;
+  }
+  els.researchClearSelectionBtn.disabled = state.busy || !state.researchSelectedDocumentIds.size;
+  els.researchAnalyzeBtn.disabled = state.busy || !supported || !state.researchSelectedDocumentIds.size;
+
+  if (!supported) {
+    els.researchSyncStatus.textContent = "当前启动方式暂不支持目录扫描";
+  } else if (!hasFolder) {
+    els.researchSyncStatus.textContent = "尚未连接简报目录";
+  } else {
+    const pending = research.documents.filter((document) => document.status === "pending").length;
+    const failed = research.documents.filter((document) => document.status === "failed").length;
+    const missing = research.documents.filter((document) => document.status === "missing").length;
+    const parts = [];
+    if (pending) parts.push(`${pending} 份待分析`);
+    if (failed) parts.push(`${failed} 份失败`);
+    if (missing) parts.push(`${missing} 份源文件缺失`);
+    els.researchSyncStatus.textContent = parts.length ? parts.join("，") : "简报索引已同步";
+  }
+  renderResearchMaintenance(supported);
+  renderResearchDocuments();
+  renderResearchInsights();
+}
+
+function renderResearchMaintenance(supported) {
+  const documents = state.research.documents;
+  const missing = documents.filter((document) => document.status === "missing").length;
+  const pending = documents.filter((document) => document.status === "pending").length;
+  const hasFolder = Boolean(state.research.folderPath);
+  const busy = state.busy;
+
+  if (!supported || !hasFolder || (!documents.length && !missing)) {
+    els.researchMaintenance.hidden = true;
+    return;
+  }
+
+  const hints = [];
+  if (missing) hints.push(`${missing} 份简报的源文件已不在目录中，它们不会参与分析。`);
+  if (pending) hints.push(`${pending} 份待分析。`);
+  if (!hints.length) hints.push(`${documents.length} 份简报已全部分析完成。`);
+  els.researchMaintenanceHint.textContent = hints.join(" ");
+
+  els.researchRecoverBtn.hidden = !missing;
+  els.researchRecoverBtn.disabled = busy;
+  els.researchClearMissingBtn.hidden = !missing;
+  els.researchClearMissingBtn.disabled = busy;
+  els.researchClearPendingBtn.hidden = !pending;
+  els.researchClearPendingBtn.disabled = busy;
+  els.researchClearAllBtn.hidden = !documents.length;
+  els.researchClearAllBtn.disabled = busy;
+
+  els.researchMaintenance.hidden = false;
+}
+
+function researchDocumentStatus(document) {
+  return {
+    pending: ["待分析", "pending"],
+    analyzed: [document.truncated ? "已分析（长文截取）" : "已分析", "analyzed"],
+    failed: ["分析失败", "failed"],
+    missing: ["源文件缺失", "missing"],
+  }[document.status] || ["待分析", "pending"];
+}
+
+function renderResearchDocuments() {
+  els.researchDocumentList.innerHTML = "";
+  if (!state.backend.researchSupported) {
+    els.researchDocumentList.append(emptyState("请使用桌面版或支持目录扫描的本地服务"));
+    return;
+  }
+  if (!state.research.documents.length) {
+    els.researchDocumentList.append(emptyState(state.research.folderPath ? "目录中尚未扫描到 Markdown 简报" : "选择简报存档目录后开始扫描"));
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  state.research.documents.forEach((researchDocument) => {
+    const [statusLabel, statusClass] = researchDocumentStatus(researchDocument);
+    const selected = state.researchSelectedDocumentIds.has(researchDocument.id);
+    const card = document.createElement("article");
+    card.className = `research-document-card${selected ? " selected" : ""}`;
+    card.innerHTML = `
+      <label class="research-document-select" title="选择此简报">
+        <input type="checkbox" ${selected ? "checked" : ""} ${researchDocument.status === "missing" ? "disabled" : ""} />
+        <span class="sr-only">选择</span>
+      </label>
+      <div class="research-document-body">
+        <div class="research-document-head">
+          <strong>${escapeHtml(researchDocument.title)}</strong>
+          <span class="research-status ${statusClass}">${statusLabel}</span>
+        </div>
+        <p>${escapeHtml(researchDocument.relativePath)}</p>
+        <div class="research-document-meta">
+          <span>${escapeHtml(researchDocument.date || formatDateOnly(researchDocument.modifiedAt) || "日期未知")}</span>
+          <span>${formatFileSize(researchDocument.size)}</span>
+          ${researchDocument.insightCount ? `<span>${researchDocument.insightCount} 条发现</span>` : ""}
+        </div>
+        ${researchDocument.lastError ? `<small class="research-document-error">${escapeHtml(researchDocument.lastError)}</small>` : ""}
+      </div>
+      <button class="research-icon-button" type="button" data-action="open" title="打开源文档" aria-label="打开源文档">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7M10 14 21 3M21 14v7H3V3h7" /></svg>
+      </button>
+    `;
+    card.querySelector("input")?.addEventListener("change", (event) => {
+      if (event.target.checked) state.researchSelectedDocumentIds.add(researchDocument.id);
+      else state.researchSelectedDocumentIds.delete(researchDocument.id);
+      renderResearch();
+    });
+    card.querySelector("[data-action='open']")?.addEventListener("click", () => openResearchSource(researchDocument.path));
+    fragment.append(card);
+  });
+  els.researchDocumentList.append(fragment);
+}
+
+function filteredResearchInsights() {
+  const query = state.researchQuery;
+  return state.research.insights.filter((insight) => {
+    if (state.researchFilter !== "all" && insight.type !== state.researchFilter) return false;
+    if (!query) return true;
+    return [
+      insight.title,
+      insight.summary,
+      insight.thesis,
+      insight.application,
+      insight.hypothesis,
+      insight.claim,
+      insight.sourceTitle,
+      insight.sourceRelativePath,
+      ...insight.tags,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(query);
+  });
+}
+
+function renderResearchInsights() {
+  document.querySelectorAll("[data-research-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.researchFilter === state.researchFilter);
+  });
+  els.researchInsightList.innerHTML = "";
+  const insights = filteredResearchInsights();
+  if (!insights.length) {
+    els.researchInsightList.append(emptyState(state.research.insights.length ? "没有符合当前筛选的研究发现" : "分析简报后，研究发现会显示在这里"));
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  insights.forEach((insight) => fragment.append(researchInsightCard(insight)));
+  els.researchInsightList.append(fragment);
+}
+
+function researchInsightPreview(insight) {
+  if (insight.type === "article") return insight.thesis || insight.summary;
+  if (insight.type === "method") return insight.application || insight.summary;
+  if (insight.type === "experiment") return insight.hypothesis || insight.summary;
+  return insight.claim || insight.summary;
+}
+
+function researchInsightCard(insight) {
+  const card = document.createElement("article");
+  card.className = `research-insight-card type-${insight.type}${insight.stale ? " stale" : ""}`;
+  const support = insight.type === "evidence" ? `<span class="research-support support-${insight.supportLevel}">${RESEARCH_SUPPORT_LABELS[insight.supportLevel]}</span>` : "";
+  const metrics = insight.type === "experiment" && insight.metrics.length ? `<p class="research-card-note"><strong>指标</strong>${escapeHtml(insight.metrics.slice(0, 3).join(" · "))}</p>` : "";
+  card.innerHTML = `
+    <div class="research-insight-head">
+      <div>
+        <span class="research-type-badge">${RESEARCH_TYPE_LABELS[insight.type]}</span>
+        ${support}
+        ${insight.stale ? '<span class="research-stale-badge">来源已更新</span>' : ""}
+        ${insight.status === "transferred" ? '<span class="research-transferred-badge">已转入缓冲区</span>' : ""}
+      </div>
+      <time>${escapeHtml(insight.sourceDate || "")}</time>
+    </div>
+    <h3>${escapeHtml(insight.title)}</h3>
+    <p>${escapeHtml(researchInsightPreview(insight))}</p>
+    ${metrics}
+    <div class="research-card-source">
+      <span>${escapeHtml(insight.sourceTitle || insight.sourceRelativePath || "来源简报")}</span>
+      ${insight.sourceSection ? `<small>${escapeHtml(insight.sourceSection)}</small>` : ""}
+    </div>
+    <div class="research-card-tags">${insight.tags.map((tag) => `<span>#${escapeHtml(tag)}</span>`).join("")}</div>
+    <div class="research-card-actions">
+      <button type="button" data-action="view">查看详情</button>
+      <button type="button" data-action="open">打开来源</button>
+      <button type="button" data-action="transfer" ${insight.status === "transferred" ? "disabled" : ""}>转入缓冲区</button>
+      <button class="danger-text" type="button" data-action="delete">删除</button>
+    </div>
+  `;
+  card.querySelector("[data-action='view']").addEventListener("click", () => openResearchInsight(insight));
+  card.querySelector("[data-action='open']").addEventListener("click", () => openResearchSource(insight.sourcePath));
+  card.querySelector("[data-action='transfer']").addEventListener("click", () => transferResearchInsight(insight.id));
+  card.querySelector("[data-action='delete']").addEventListener("click", () => deleteResearchInsight(insight.id));
+  return card;
+}
+
+function researchInsightDetail(insight) {
+  const sections = [
+    ["摘要", insight.summary],
+    ["核心论点", insight.thesis],
+    ["可借鉴位置", insight.application],
+    ["可检验假设", insight.hypothesis],
+    ["实验设置", insight.setup],
+    ["变量与对照", insight.variables.join("\n- ")],
+    ["评估指标", insight.metrics.join("\n- ")],
+    ["预期结果", insight.expectedOutcome],
+    ["风险与限制", insight.risks.join("\n- ")],
+    ["待支撑观点", insight.claim],
+    ["支持关系", insight.type === "evidence" ? `${RESEARCH_SUPPORT_LABELS[insight.supportLevel]}：${insight.rationale}` : ""],
+    ["文章结构", insight.outline.join("\n- ")],
+    ["原文摘录", insight.sourceExcerpt],
+    ["来源章节", insight.sourceSection],
+    ["来源文件", insight.sourceRelativePath],
+  ];
+  return sections
+    .filter(([, value]) => value)
+    .map(([label, value]) => `${label}\n${Array.isArray(value) ? value.join("\n") : value}`)
+    .join("\n\n");
+}
+
+function openResearchInsight(insight) {
+  els.modalCategory.textContent = RESEARCH_TYPE_LABELS[insight.type];
+  els.modalTitle.textContent = insight.title;
+  els.modalMeta.innerHTML = `
+    <span>${escapeHtml(insight.sourceDate || "日期未知")}</span>
+    <span>${escapeHtml(insight.sourceTitle || "来源简报")}</span>
+    ${insight.type === "evidence" ? `<span>${RESEARCH_SUPPORT_LABELS[insight.supportLevel]}</span>` : ""}
+  `;
+  els.modalContent.textContent = researchInsightDetail(insight);
+  els.detailModal.classList.add("open");
+  els.detailModal.setAttribute("aria-hidden", "false");
+}
+
+async function chooseResearchFolder() {
+  if (!window.ideahubDesktop?.chooseResearchFolder) return;
+  try {
+    const folderPath = await window.ideahubDesktop.chooseResearchFolder();
+    if (!folderPath) return;
+    els.researchFolderInput.value = folderPath;
+    await applyResearchFolder();
+    await scanResearchFolder();
+  } catch (error) {
+    console.error("选择简报目录失败", error);
+    showToast(error.message || "选择目录失败");
+  }
+}
+
+async function applyResearchFolder() {
+  if (!state.backend.available || !state.backend.researchSupported) {
+    showToast("当前启动方式不支持本地目录扫描");
+    return false;
+  }
+  const folderPath = els.researchFolderInput.value.trim();
+  if (!folderPath) {
+    showToast("请先选择或输入简报目录");
+    return false;
+  }
+  if (state.research.folderPath && state.research.folderPath !== folderPath && state.research.insights.length) {
+    const confirmed = window.confirm("更换目录会清空当前研究雷达的文档索引和分析结果，是否继续？");
+    if (!confirmed) return false;
+  }
+  setBusy(true);
+  try {
+    const payload = await apiPost("/api/research/settings", { folderPath });
+    state.research = normalizeResearchStore(payload.research || {});
+    state.researchSelectedDocumentIds.clear();
+    render();
+    showToast("简报目录已保存");
+    return true;
+  } catch (error) {
+    console.error("保存简报目录失败", error);
+    showToast(error.message || "目录无法访问");
+    return false;
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function scanResearchFolder() {
+  if (els.researchFolderInput.value.trim() !== state.research.folderPath) {
+    const saved = await applyResearchFolder();
+    if (!saved) return;
+  }
+  if (!state.research.folderPath) return;
+  setBusy(true);
+  try {
+    const payload = await apiPost("/api/research/scan", {});
+    state.research = normalizeResearchStore(payload.store || payload.research || {});
+    const summary = payload.summary || {};
+    render();
+    showToast(`扫描完成：${summary.total || 0} 份简报，新增 ${summary.added || 0}，更新 ${summary.changed || 0}`);
+  } catch (error) {
+    console.error("扫描简报失败", error);
+    showToast(error.message || "扫描简报失败");
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function runResearchMaintenance(endpoint, payload, label, confirmMessage = "") {
+  if (confirmMessage && !window.confirm(confirmMessage)) return;
+  setBusy(true);
+  try {
+    const response = await apiPost(endpoint, payload);
+    state.research = normalizeResearchStore(response.research || {});
+    const removed = Number(response.removed || 0);
+    const recovered = Number(response.recovered || 0);
+    state.researchSelectedDocumentIds.clear();
+    render();
+    if (recovered) showToast(`${label}：已重新关联 ${recovered} 份简报`);
+    else if (removed) showToast(`${label}：已移除 ${removed} 条`);
+    else showToast(`${label}：没有需要处理的条目`);
+  } catch (error) {
+    console.error(`${label}失败`, error);
+    showToast(error.message || `${label}失败`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function analyzeSelectedResearchDocuments() {
+  const selected = state.research.documents.filter((document) => state.researchSelectedDocumentIds.has(document.id) && document.status !== "missing");
+  if (!selected.length) return;
+  await refreshBackendConfig();
+  try {
+    assertModelReady();
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
+  const provider = PROVIDER_LABELS[state.config.provider] || state.config.provider;
+  const confirmed = window.confirm(`将把所选 ${selected.length} 份简报正文发送给 ${provider} 进行分析。是否继续？`);
+  if (!confirmed) return;
+
+  setBusy(true);
+  let completed = 0;
+  let failed = 0;
+  updateResearchProgress(0, selected.length, "正在准备研究分析");
+  for (const document of selected) {
+    try {
+      updateResearchProgress(completed + failed, selected.length, `正在分析：${document.title}`);
+      const payload = await apiPost("/api/research/analyze", { documentId: document.id, config: state.config });
+      state.research = normalizeResearchStore(payload.research || {});
+      state.researchSelectedDocumentIds.delete(document.id);
+      completed += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(`研究简报分析失败：${document.title}`, error);
+      try {
+        const payload = await apiGet("/api/research");
+        state.research = normalizeResearchStore(payload.research || {});
+      } catch (_refreshError) {
+        // Keep the last successful state when the backend is temporarily unavailable.
+      }
+    }
+    updateResearchProgress(completed + failed, selected.length, `已处理 ${completed + failed}/${selected.length}`);
+    render();
+  }
+  window.setTimeout(() => updateResearchProgress(), 500);
+  setBusy(false);
+  showToast(failed ? `完成 ${completed} 份，失败 ${failed} 份，可在来源文档中查看原因` : `已完成 ${completed} 份简报分析`);
+}
+
+function updateResearchProgress(completed, total, message = "") {
+  if (!total) {
+    state.researchProgress = null;
+    els.researchProgress.hidden = true;
+    return;
+  }
+  state.researchProgress = { completed, total, message };
+  els.researchProgress.hidden = false;
+  els.researchProgress.querySelector("span").style.width = `${Math.round((completed / total) * 100)}%`;
+  els.researchProgress.querySelector("p").textContent = message;
+}
+
+async function openResearchSource(filePath) {
+  if (!filePath) return;
+  try {
+    if (window.ideahubDesktop?.openResearchFile) {
+      await window.ideahubDesktop.openResearchFile(filePath);
+      return;
+    }
+    await navigator.clipboard.writeText(filePath);
+    showToast("源文件路径已复制");
+  } catch (error) {
+    console.error("打开研究来源失败", error);
+    showToast(error.message || "无法打开源文件");
+  }
+}
+
+function researchInsightTransferText(insight) {
+  return [
+    `【研究雷达 · ${RESEARCH_TYPE_LABELS[insight.type]}】${insight.title}`,
+    researchInsightPreview(insight),
+    insight.type === "experiment" && insight.setup ? `实验设置：${insight.setup}` : "",
+    insight.type === "experiment" && insight.metrics.length ? `评估指标：${insight.metrics.join("、")}` : "",
+    insight.type === "evidence" ? `证据强度：${RESEARCH_SUPPORT_LABELS[insight.supportLevel]}` : "",
+    `来源：${insight.sourceTitle || insight.sourceRelativePath}${insight.sourceSection ? ` / ${insight.sourceSection}` : ""}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function transferResearchInsight(insightId) {
+  const insight = state.research.insights.find((item) => item.id === insightId);
+  if (!insight || insight.status === "transferred") return;
+  setBusy(true);
+  try {
+    const staged = await createStagedItem(researchInsightTransferText(insight));
+    state.staged.unshift(normalizeStagedItem(staged));
+    await persistStaged();
+    const payload = await apiPatch(`/api/research/insights/${encodeURIComponent(insightId)}`, { status: "transferred" });
+    state.research = normalizeResearchStore(payload.research || state.research);
+    render();
+    showToast("研究发现已转入普通缓冲区，尚未分类入库");
+  } catch (error) {
+    console.error("转入研究发现失败", error);
+    showToast(error.message || "转入缓冲区失败");
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function deleteResearchInsight(insightId) {
+  const insight = state.research.insights.find((item) => item.id === insightId);
+  if (!insight || !window.confirm(`确定删除“${insight.title}”吗？原始简报不会受到影响。`)) return;
+  setBusy(true);
+  try {
+    const payload = await apiDelete(`/api/research/insights/${encodeURIComponent(insightId)}`);
+    state.research = normalizeResearchStore(payload.research || {});
+    render();
+    showToast("研究发现已删除");
+  } catch (error) {
+    console.error("删除研究发现失败", error);
+    showToast(error.message || "删除失败");
+  } finally {
+    setBusy(false);
+  }
+}
+
+function formatDateOnly(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(bytes > 10240 ? 0 : 1)} KB`;
 }
 
 function renderStagedBuffer() {
@@ -1842,6 +2510,12 @@ function exportData() {
     exportedAt: new Date().toISOString(),
     items: state.items,
     staged: state.staged,
+    research: {
+      ...state.research,
+      folderPath: "",
+      documents: state.research.documents.map(({ path: _path, ...document }) => document),
+      insights: state.research.insights.map(({ sourcePath: _sourcePath, ...insight }) => insight),
+    },
     ui: state.ui,
     config: {
       ...state.config,
@@ -1898,6 +2572,10 @@ async function importData(event) {
       };
       persistUiConfig();
     }
+    if (payload.research && state.backend.researchSupported) {
+      const response = await apiPost("/api/research/import", { research: payload.research });
+      state.research = normalizeResearchStore(response.research || {});
+    }
     render();
     showToast(`已导入 ${imported.length} 条内容`);
   } catch (error) {
@@ -1915,8 +2593,49 @@ function hydrateConfigForm() {
   els.apiKeyInput.value = state.config.apiKey;
   els.layoutModeSelect.value = state.ui.layoutMode;
   els.themeModeSelect.value = normalizeThemeMode(state.ui.themeMode);
+  renderModuleToggles();
   renderProviderHelp(state.config.provider);
   renderModelStatus();
+}
+
+function renderModuleToggles() {
+  if (!els.moduleToggleList) return;
+  els.moduleToggleList.innerHTML = "";
+  const fragment = document.createDocumentFragment();
+  for (const module of MODULES) {
+    const enabled = Boolean(state.ui.modules[module.id]);
+    const row = document.createElement("label");
+    row.className = "module-toggle";
+    row.innerHTML = `
+      <input type="checkbox" data-module="${module.id}" ${enabled ? "checked" : ""} ${module.locked ? "disabled" : ""} />
+      <span class="module-toggle-copy">
+        <strong>${escapeHtml(module.label)}</strong>
+        <small>${escapeHtml(module.locked ? "应用入口，始终显示" : module.description)}</small>
+      </span>
+    `;
+    const input = row.querySelector("input");
+    input.addEventListener("change", () => toggleModule(module.id, input.checked));
+    fragment.append(row);
+  }
+  const summary = document.createElement("p");
+  summary.className = "module-toggle-summary";
+  summary.textContent = `已启用 ${enabledModules().length}/${MODULES.length} 个模块`;
+  fragment.append(summary);
+  els.moduleToggleList.append(fragment);
+}
+
+function toggleModule(moduleId, enabled) {
+  if (!MODULE_IDS.includes(moduleId)) return;
+  const module = MODULES.find((item) => item.id === moduleId);
+  if (module?.locked) return;
+  state.ui.modules = normalizeModules({ ...state.ui.modules, [moduleId]: enabled });
+  // Turning off the module you are looking at has to move you somewhere valid.
+  state.ui.activeView = validView(state.ui.activeView);
+  persistUiConfig();
+  applyLayoutMode();
+  render();
+  renderModuleToggles();
+  showToast(`${module?.label || moduleId} 已${enabled ? "显示" : "隐藏"}`);
 }
 
 function readConfigForm() {
@@ -2006,19 +2725,45 @@ function persistConfig() {
 function loadUiConfig() {
   try {
     const saved = JSON.parse(localStorage.getItem(UI_CONFIG_KEY) || "{}");
+    const modules = normalizeModules(saved.modules);
     return {
       layoutMode: saved.layoutMode === "nav" ? "nav" : "single",
-      activeView: validView(saved.activeView),
+      activeView: validView(saved.activeView, modules),
       themeMode: normalizeThemeMode(saved.themeMode),
+      modules,
     };
   } catch (error) {
     console.warn("Failed to load UI config", error);
-    return { layoutMode: "single", activeView: "capture", themeMode: "system" };
+    return { layoutMode: "single", activeView: "capture", themeMode: "system", modules: defaultModules() };
   }
 }
 
-function validView(value) {
-  return ["capture", "calendar", "overview", "report", "dashboard", "logs"].includes(value) ? value : "capture";
+function defaultModules() {
+  return MODULES.reduce((accumulator, module) => {
+    accumulator[module.id] = true;
+    return accumulator;
+  }, {});
+}
+
+function normalizeModules(value) {
+  const modules = defaultModules();
+  if (value && typeof value === "object") {
+    for (const id of MODULE_IDS) {
+      if (typeof value[id] === "boolean") modules[id] = value[id];
+    }
+  }
+  // 收集箱是应用的入口，始终保留，避免用户把自己锁在外面。
+  modules.capture = true;
+  return modules;
+}
+
+function enabledModules() {
+  return MODULE_IDS.filter((id) => state.ui.modules[id]);
+}
+
+function validView(value, modules = state.ui.modules) {
+  if (MODULE_IDS.includes(value) && modules[value]) return value;
+  return "capture";
 }
 
 function loadLogs() {
@@ -2238,6 +2983,7 @@ function setBusy(isBusy) {
   els.selectAllBtn.disabled = isBusy || !filteredItems().length;
   els.clearSelectionBtn.disabled = isBusy || !state.selectedIds.size;
   els.deleteSelectedBtn.disabled = isBusy || !state.selectedIds.size;
+  if (els.researchAnalyzeBtn) renderResearch();
 }
 
 function showToast(message) {

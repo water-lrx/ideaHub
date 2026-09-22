@@ -1,4 +1,4 @@
-const CACHE_VERSION = "ideahub-pwa-v7";
+const CACHE_VERSION = "ideahub-pwa-v8";
 const APP_SHELL = [
   "/",
   "/index.html",

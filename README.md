@@ -22,6 +22,9 @@ IdeaHub is designed for private personal knowledge work. Data stays on the local
 - **Dashboard**: metrics, category chart, priority list, board columns, and timeline.
 - **Workspace overview**: review the current category distribution and recently updated records in one place.
 - **Periodic reports**: generate daily, weekly, monthly, yearly, or custom-range summaries, reviews, mentor updates, and custom reports.
+- **Research radar**: scan local Markdown briefs and separately extract article ideas, transferable methods, experiment ideas, and source-backed evidence indexes.
+- **Module toggles**: show or hide any top-level module from Settings so only the sections you need stay visible; the choice is stored locally.
+- **Self-healing index**: when a brief is moved, renamed, or deleted, its index entry is marked **source file missing** and dropped from the pending queue instead of blocking analysis; re-match files or clean up the list from inside Research Radar.
 - **Manual correction**: move existing records between categories without calling the model again.
 - **Bulk deletion**: select multiple records, select all visible records, and delete in one action.
 - **Layout modes**: choose between a full single-page layout and a navigation layout with separate sections.
@@ -33,15 +36,33 @@ IdeaHub is designed for private personal knowledge work. Data stays on the local
 - **Desktop app**: Electron wrapper with a local-only server and a Quit button that stops the app process.
 - **Import/export**: move data with a JSON migration package; API keys are not included in exports.
 
+## Module Toggles
+
+Every top-level feature is an independent module that can be shown or hidden from **Settings → 功能模块**:
+
+| Module | Purpose |
+| --- | --- |
+| 收集箱 (Capture) | Quick capture, staging buffer, and record management (app entry point, always visible) |
+| 日历 (Calendar) | Browse and schedule records by date |
+| 概览 (Overview) | Category distribution and recent activity |
+| 汇报 (Reports) | Generate periodic summaries and reports |
+| 研究雷达 (Research Radar) | Scan brief folders and extract research leads |
+| 分类看板 (Board) | Browse all records by category and status |
+| 运行日志 (Logs) | Inspect runtime and error logs |
+
+Hiding a module removes its navigation entry and hides the matching section. If you are currently viewing a module you just hid, the app returns to Capture. The choice is stored in your browser (`ideahub.ui.v1` in `localStorage`), so it does not affect other devices and never modifies or deletes data — re-enable it any time. Capture is always kept as the application entry point so you cannot lock yourself out.
+
 ## Privacy Model
 
 IdeaHub does not upload content by itself.
 
 - Browser-only mode stores data in `localStorage`.
 - Python server mode stores records in `data/items.json` and staged notes in `data/staged.json`.
+- Research document indexes and extracted findings are stored separately in `research.json` and never enter the normal idea library automatically.
 - Desktop mode stores data in the operating system app data directory.
 - Runtime logs stay on the local device and are excluded from exports; common credential and authorization fields are redacted.
-- Model providers receive text only when you click model test or submit the buffer.
+- Research folder scanning, file hashing, and indexing happen locally.
+- Model providers receive text only when you test a model, submit the buffer, or explicitly confirm analysis of selected research documents.
 - `.env`, local data files, build outputs, and packaged desktop folders are ignored by Git.
 
 Do not commit real API keys, Memos tokens, Cloudflare Tunnel tokens, or personal `data/*.json` files.
@@ -95,6 +116,33 @@ Desktop data locations:
 - macOS: `~/Library/Application Support/IdeaHub/data/items.json`
 - Windows: `%APPDATA%\IdeaHub\data\items.json`
 - Linux: `~/.config/IdeaHub/data/items.json`
+
+The same directory contains `staged.json`, `research.json`, `config.json`, and `logs.json` for the buffer, research radar, model settings, and local logs.
+
+## Research Radar
+
+Research Radar is designed for daily Markdown briefs, paper-reading notes, and project research while keeping those findings separate from everyday captured ideas.
+
+1. Open **Research Radar** in navigation mode.
+2. In the desktop app, click **Choose Folder**. With the Python server, type a local directory path and click **Apply**.
+3. Click **Scan Changes**. Scanning, title/date extraction, and SHA-256 hashing all happen locally.
+4. Select documents and click **AI Analyze Selected**. Only the selected document bodies are sent after confirmation.
+5. Review article ideas, transferable methods, experiment ideas, and evidence indexes. Each finding retains its source document, relative path, date, section, and excerpt.
+6. Use **Transfer to Buffer** explicitly when a finding should enter the normal IdeaHub workflow.
+
+When a source document changes, previous findings are marked stale until the document is analyzed again. At most 60,000 characters per document are sent to the model, and truncated long documents are labeled in the source list. Static `index.html` mode cannot read local directories; use the desktop app or `python3 server.py`.
+
+### Missing Source Files and Clearing the Pending Queue
+
+When a brief is moved, renamed, or deleted from the folder, its index entry does not stay stuck in the pending state:
+
+- Opening Research Radar checks whether each indexed file still exists. Entries whose source is gone immediately become **source file missing** and leave the pending queue, so they no longer block analysis of other briefs.
+- **Re-match Files** relinks briefs that were renamed or moved (for example re-exported with an emoji prefix) by normalized file name, returning them to the pending state.
+- **Clean Up Missing** removes index entries whose source file no longer exists.
+- **Clear Pending** empties the current pending queue without touching analyzed results.
+- **Clear All** resets the entire brief index and extracted findings. It cannot be undone.
+
+The matching endpoints are `POST /api/research/recover` and `POST /api/research/clear` with a `scope` of `missing`, `pending`, `analyzed`, `failed`, or `all`.
 
 ### Build Desktop Folders
 
@@ -188,6 +236,8 @@ docker compose up -d --build ideahub
 
 ## PWA and Mobile Access
 
+IdeaHub ships a built-in PWA, so it can be installed on an Android phone as an app without packaging a separate APK.
+
 For local development, use:
 
 ```text
@@ -199,6 +249,16 @@ For phone access on the same Wi-Fi, open the computer's LAN address, for example
 ```text
 http://192.168.1.20:5173
 ```
+
+### Installing on Android
+
+1. Open that address in Chrome (a LAN address works, though HTTPS is more reliable).
+2. Choose **Add to Home screen** from the browser menu, or tap the **安装 / Install** button in the app header.
+3. Launch it from the home-screen icon; it runs in a standalone window without browser chrome.
+
+The interface is tuned for phone screens: every control has a tap target of at least 44px, form fields use a 16px font so Android does not zoom on focus, and notch/gesture-bar `safe-area` insets are respected. On narrow screens, **single-page mode** is recommended; switch to **navigation mode** if you prefer switching modules from the navigation bar.
+
+The Service Worker caches the application shell so the interface still opens offline for data already loaded. API requests always go to the network and never serve stale data.
 
 For long-term mobile use, deploy behind HTTPS. Browser PWA installation and Service Worker behavior are most reliable on HTTPS or localhost.
 
@@ -218,6 +278,8 @@ Deployment options:
 ## Data Migration and Backup
 
 In the app, use **Export** to download a JSON migration file, then **Import** on another device.
+
+Migration packages retain research findings and relative source paths while removing absolute folder paths. On a new device, select the matching brief root folder and scan again to restore file associations. Exports contain neither API keys nor source Markdown bodies.
 
 For server deployments, back up:
 
@@ -242,8 +304,21 @@ The Python server exposes:
 - `DELETE /api/staged/:id`
 - `POST /api/classify`
 - `POST /api/import`
+- `GET /api/research`
+- `POST /api/research/settings`
+- `POST /api/research/scan`
+- `POST /api/research/analyze`
+- `POST /api/research/recover`
+- `POST /api/research/clear`
+- `POST /api/research/import`
+- `PATCH /api/research/insights/:id`
+- `DELETE /api/research/insights/:id`
 
 `POST /api/items` and `POST /api/classify` can return multiple `items` because the model may split one input into several records.
+
+`GET /api/research` verifies that each indexed file still exists before responding, so vanished files are reported as `missing` immediately instead of occupying the pending queue.
+
+`POST /api/research/clear` accepts `{"scope": "missing" | "pending" | "analyzed" | "failed" | "all"}`, defaults to `missing`, and returns `{"research": ..., "removed": n, "scope": ...}`.
 
 ## Project Structure
 
