@@ -32,8 +32,8 @@ IdeaHub 面向个人知识管理和隐私场景设计。默认情况下，数据
 - **独立模型配置**：不同模型服务商分别保存自己的 API Key，切换服务商时不会相互覆盖。
 - **本地运行日志**：在应用内查看错误、警告和运行信息；日志会隐藏常见 API Key 和授权字段。
 - **本地优先存储**：支持浏览器存储、JSON 文件存储，也可以选配 Memos。
+- **安卓独立安装包**：可打包成 APK 直接发给别人，无需服务器、无需登录；每人数据存在自己手机上，API Key 各自填写。
 - **PWA 支持**：可在支持的浏览器中安装，也支持 `/?focus=capture` 等快捷入口。
-- **安卓手机可用**：通过局域网地址在手机 Chrome 中打开并「添加到主屏幕」，即可当作应用使用；界面已按手机屏幕适配触控尺寸、输入缩放和安全区。
 - **桌面应用**：Electron 桌面壳，默认只监听本机，并提供退出按钮，退出后不会继续留在后台运行。
 - **导入导出**：通过 JSON 迁移文件备份或迁移数据；导出文件不会包含 API Key。
 
@@ -235,9 +235,65 @@ MEMOS_ACCESS_TOKEN=your_memos_token
 docker compose up -d --build ideahub
 ```
 
-## PWA 和手机访问
+## 安卓版（推荐，可直接发给别人）
 
-IdeaHub 内置 PWA，可以直接在安卓手机上作为应用安装，不需要单独打包 APK。
+安卓版是一个**独立安装包**：别人装上就能用，不需要服务器、不需要你的电脑开着、不需要 Python，也不需要登录。每个人的数据存在自己手机上，API Key 也由各自填写。
+
+### 给别人安装
+
+1. 打开本仓库的 [Releases](https://github.com/water-lrx/ideaHub/releases) 页面。
+2. 下载最新版本的 `app-release.apk`。
+3. 在手机上打开这个文件安装。系统可能提示「未知来源」或「不允许安装未知应用」，按提示允许来自浏览器/文件管理器的安装即可。
+4. 首次使用打开右上角 **设置 → 模型服务**，填入自己的 API Key（DeepSeek、智谱、硅基流动等都支持）。**不填也能用基础功能**（记录、浏览、日历、汇报），只是「AI 整理」不可用。
+
+> 安卓版默认不显示**研究雷达**：它需要读取简报目录，而手机版是独立应用、没有服务端。其余模块（收集箱、日历、概览、汇报、分类看板、运行日志）都可正常使用。如果你以后把手机版指向一台服务端，仍可在「设置 → 功能模块」中把它打开。
+
+### 自己构建 APK
+
+不需要在本机安装 Java 或 Android SDK——在 GitHub 上云端构建：
+
+1. 打开仓库 **Actions** 标签页，选择左侧的 **Build Android APK**。
+2. 点击 **Run workflow**，选择 `release` 或 `debug`，运行。
+3. 运行结束后在该次运行的 **Artifacts** 中下载 `ideahub-android-apk`。
+
+也可以推送一个 `v*` 标签来触发构建，这样 APK 还会自动附加到 GitHub Release。工作流会校验 APK 内确实包含 Web 资源和 `classes.dex` 后才上传。
+
+### 发布签名（可选）
+
+默认用 Android 调试密钥签名，可以直接安装使用，但**不适合上架应用商店**。要使用自己的签名，在仓库 **Settings → Secrets and variables → Actions** 中添加：
+
+| Secret | 说明 |
+| --- | --- |
+| `IDEAAHUB_KEYSTORE_BASE64` | 你的 keystore 文件经 base64 编码后的内容 |
+| `IDEAAHUB_KEYSTORE_PASSWORD` | keystore 密码 |
+| `IDEAAHUB_KEY_ALIAS` | 密钥别名 |
+| `IDEAAHUB_KEY_PASSWORD` | 密钥密码 |
+
+生成 keystore 并编码：
+
+```bash
+keytool -genkey -v -keystore ideahub-release.jks -keyalg RSA -keysize 2048 \
+  -validity 10000 -alias ideahub
+base64 -i ideahub-release.jks | pbcopy   # macOS；Linux 用 base64 -w0
+```
+
+未配置时工作流会打印一条提示，仍然照常出包。
+
+### 本地构建（可选）
+
+如果你本机已有 JDK 17 和 Android SDK：
+
+```bash
+npm run android:sync      # 组装 www/ 并同步进安卓工程
+npm run android:apk       # 直接产出 debug APK
+npm run android:open      # 用 Android Studio 打开
+```
+
+`android/` 目录是签入仓库的，可以直接用 Android Studio 打开。
+
+## PWA 和手机访问（备选：不装 App）
+
+如果你不想安装 App，也可以把 IdeaHub 当网页用。这种方式需要一台电脑跑服务。
 
 > **注意：桌面版不能给手机用。** Electron 桌面版只监听 `127.0.0.1`，不对外提供局域网服务。手机端必须通过 `python3 server.py`（或 Docker）来访问。
 
@@ -360,14 +416,20 @@ Python 服务提供以下接口：
 ├── app.js                  # 前端状态、模型调用和渲染逻辑
 ├── sw.js                   # PWA Service Worker
 ├── manifest.webmanifest    # PWA Manifest
-├── icons/                  # PWA 图标
-├── electron/               # Electron 主进程和 preload
-├── server.py               # 静态服务、API 代理、JSON/Memos 存储
+├── icons/                  # PWA 与安卓图标源文件
+├── electron/               # Electron 主进程和 preload（桌面版自带 JS 服务端）
+├── server.py               # 静态服务、API 代理、JSON/Memos 存储（可选的网页模式）
+├── capacitor.config.js     # 安卓打包配置
+├── scripts/                # 构建辅助脚本（www 组装、安卓图标生成）
+├── android/                # Capacitor 安卓工程，可直接用 Android Studio 打开
+├── .github/workflows/      # CI：云端构建 APK、桌面版发布
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .env.example
 └── data/                   # 本地 JSON 存储目录，除 .gitkeep 外被忽略
 ```
+
+`www/` 和 `android/app/src/main/assets/public/` 由 `npm run build:www` 生成，已被忽略，不要手动编辑。
 
 ## 开发检查
 

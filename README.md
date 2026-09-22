@@ -32,8 +32,8 @@ IdeaHub is designed for private personal knowledge work. Data stays on the local
 - **Per-provider credentials**: each model provider keeps its own API key instead of sharing one global key.
 - **Local runtime logs**: inspect errors, warnings, and status information in the app; common API-key and authorization fields are redacted.
 - **Local-first storage**: browser storage, JSON files, or optional Memos integration.
+- **Self-contained Android APK**: package it and hand it to someone else — no server, no account; each person's data stays on their own phone and they add their own API key.
 - **PWA support**: install from supported browsers and use quick links such as `/?focus=capture`.
-- **Android phone support**: open the LAN address in mobile Chrome and use "Add to Home screen" as an app; the interface is adapted for phone touch targets, input zoom, and safe areas.
 - **Desktop app**: Electron wrapper with a local-only server and a Quit button that stops the app process.
 - **Import/export**: move data with a JSON migration package; API keys are not included in exports.
 
@@ -235,9 +235,65 @@ Restart IdeaHub:
 docker compose up -d --build ideahub
 ```
 
-## PWA and Mobile Access
+## Android App (recommended for sharing)
 
-IdeaHub ships a built-in PWA, so it can be installed on an Android phone as an app without packaging a separate APK.
+The Android build is a **self-contained APK**. Anyone can install it and use it immediately — no server, no need to keep your computer running, no Python, no account. Each person's data stays in their own phone's storage and each person enters their own API key.
+
+### Installing it for someone else
+
+1. Open this repository's [Releases](https://github.com/water-lrx/ideaHub/releases) page.
+2. Download `app-release.apk` from the latest version.
+3. Open the file on the phone to install. Android may warn about "unknown sources" or say it will not install unknown apps — allow installation from your browser/file manager, then retry.
+4. On first use, open **Settings → 模型服务** (Model service) and enter your own API key (DeepSeek, Zhipu, SiliconFlow and others are supported). **The app is still useful without one** — capture, browsing, calendar, and reports all work; only "AI 整理" (AI classification) needs a key.
+
+> The Android build hides **Research Radar** by default: it reads a briefing folder from disk, which a standalone phone app has no way to reach. Every other module works. If you later point the app at a server, you can switch it back on in Settings → 功能模块.
+
+### Building the APK yourself
+
+No local Java or Android SDK is needed — the build runs on GitHub's runners:
+
+1. Open the repository's **Actions** tab and select **Build Android APK** on the left.
+2. Click **Run workflow**, choose `release` or `debug`, and run it.
+3. When it finishes, download `ideahub-android-apk` from the run's **Artifacts** section.
+
+Pushing a `v*` tag also triggers the build and attaches the APK to a GitHub Release. The workflow verifies that the APK really contains the web assets and `classes.dex` before uploading.
+
+### Release signing (optional)
+
+By default the APK is signed with the Android debug key. It installs and works fine, but it is **not suitable for publishing to an app store**. To sign with your own key, add these under **Settings → Secrets and variables → Actions**:
+
+| Secret | Purpose |
+| --- | --- |
+| `IDEAAHUB_KEYSTORE_BASE64` | Your keystore file, base64-encoded |
+| `IDEAAHUB_KEYSTORE_PASSWORD` | Keystore password |
+| `IDEAAHUB_KEY_ALIAS` | Key alias |
+| `IDEAAHUB_KEY_PASSWORD` | Key password |
+
+Generate and encode a keystore:
+
+```bash
+keytool -genkey -v -keystore ideahub-release.jks -keyalg RSA -keysize 2048 \
+  -validity 10000 -alias ideahub
+base64 -i ideahub-release.jks | pbcopy   # macOS; on Linux use base64 -w0
+```
+
+Without these secrets the workflow prints a notice and still produces a working APK.
+
+### Building locally (optional)
+
+With JDK 17 and the Android SDK already installed:
+
+```bash
+npm run android:sync      # assemble www/ and sync it into the Android project
+npm run android:apk       # build a debug APK directly
+npm run android:open      # open in Android Studio
+```
+
+The `android/` directory is committed, so it opens directly in Android Studio.
+
+## PWA and Mobile Access (alternative: no install)
+
+If you would rather not install an app, IdeaHub also works as a web page. This route needs a computer running the service.
 
 > **The desktop app cannot serve your phone.** The Electron build listens only on `127.0.0.1` and exposes no LAN service. Phone access requires `python3 server.py` (or Docker).
 
@@ -360,14 +416,20 @@ The Python server exposes:
 ├── app.js                  # Frontend state, model calls, rendering
 ├── sw.js                   # PWA service worker
 ├── manifest.webmanifest    # PWA manifest
-├── icons/                  # PWA icons
-├── electron/               # Electron main process and preload
-├── server.py               # Static server, API proxy, JSON/Memos storage
+├── icons/                  # PWA and Android icon sources
+├── electron/               # Electron main process and preload (bundles its own JS server)
+├── server.py               # Static server, API proxy, JSON/Memos storage (optional web mode)
+├── capacitor.config.js     # Android packaging config
+├── scripts/                # Build helpers (www assembly, Android icon generation)
+├── android/                # Capacitor Android project, opens in Android Studio
+├── .github/workflows/      # CI: cloud APK build, desktop release
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .env.example
 └── data/                   # Local JSON storage directory, ignored except .gitkeep
 ```
+
+`www/` and `android/app/src/main/assets/public/` are generated by `npm run build:www` and are ignored — do not edit them by hand.
 
 ## Development Notes
 
