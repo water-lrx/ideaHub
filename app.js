@@ -7,6 +7,29 @@ const MAX_LOG_ENTRIES = 300;
 const COMMIT_BATCH_SIZE = 4;
 const SYSTEM_DARK_QUERY = window.matchMedia?.("(prefers-color-scheme: dark)");
 
+/**
+ * crypto.randomUUID only exists in secure contexts. Opening the PWA over plain
+ * HTTP on a LAN address (the normal way to reach IdeaHub from an Android phone)
+ * is NOT a secure context, so calling it directly throws and breaks the app.
+ */
+function createId() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+    if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+  } catch (_error) {
+    // Fall through to the timestamp-based identifier below.
+  }
+  return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 const CATEGORY_LABELS = {
   todo: "代办",
   plan: "计划",
@@ -931,7 +954,7 @@ function normalizeDueDate(value) {
 function normalizeItem(raw) {
   const category = CATEGORY_LABELS[raw.category] ? raw.category : "record";
   return {
-    id: raw.id || crypto.randomUUID(),
+    id: raw.id || createId(),
     title: trimText(String(raw.title || makeTitle(raw.content || "")), 32),
     summary: trimText(String(raw.summary || summarize(raw.content || "")), 110),
     content: String(raw.content || ""),
@@ -948,7 +971,7 @@ function normalizeItem(raw) {
 
 function normalizeStagedItem(raw) {
   return {
-    id: raw.id || crypto.randomUUID(),
+    id: raw.id || createId(),
     content: String(raw.content || ""),
     createdAt: raw.createdAt || new Date().toISOString(),
   };
@@ -956,7 +979,7 @@ function normalizeStagedItem(raw) {
 
 function normalizeResearchDocument(raw = {}) {
   return {
-    id: String(raw.id || crypto.randomUUID()),
+    id: String(raw.id || createId()),
     path: String(raw.path || ""),
     relativePath: String(raw.relativePath || raw.path || ""),
     title: String(raw.title || "未命名简报"),
@@ -976,7 +999,7 @@ function normalizeResearchInsight(raw = {}) {
   const type = RESEARCH_TYPE_LABELS[raw.type] ? raw.type : "method";
   const list = (value, max = 10) => (Array.isArray(value) ? value.map(String).filter(Boolean).slice(0, max) : []);
   return {
-    id: String(raw.id || crypto.randomUUID()),
+    id: String(raw.id || createId()),
     type,
     title: String(raw.title || "未命名研究发现"),
     summary: String(raw.summary || ""),
@@ -2777,7 +2800,7 @@ function loadLogs() {
 
 function normalizeLogEntry(entry = {}) {
   return {
-    id: String(entry.id || crypto.randomUUID()),
+    id: String(entry.id || createId()),
     level: ["error", "warn", "info"].includes(entry.level) ? entry.level : "info",
     source: sanitizeLogText(entry.source || "应用"),
     message: sanitizeLogText(entry.message || "未知日志"),

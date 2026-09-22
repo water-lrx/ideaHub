@@ -33,6 +33,7 @@ IdeaHub is designed for private personal knowledge work. Data stays on the local
 - **Local runtime logs**: inspect errors, warnings, and status information in the app; common API-key and authorization fields are redacted.
 - **Local-first storage**: browser storage, JSON files, or optional Memos integration.
 - **PWA support**: install from supported browsers and use quick links such as `/?focus=capture`.
+- **Android phone support**: open the LAN address in mobile Chrome and use "Add to Home screen" as an app; the interface is adapted for phone touch targets, input zoom, and safe areas.
 - **Desktop app**: Electron wrapper with a local-only server and a Quit button that stops the app process.
 - **Import/export**: move data with a JSON migration package; API keys are not included in exports.
 
@@ -238,27 +239,57 @@ docker compose up -d --build ideahub
 
 IdeaHub ships a built-in PWA, so it can be installed on an Android phone as an app without packaging a separate APK.
 
-For local development, use:
+> **The desktop app cannot serve your phone.** The Electron build listens only on `127.0.0.1` and exposes no LAN service. Phone access requires `python3 server.py` (or Docker).
 
-```text
-http://localhost:5173
+### Start the server on your computer
+
+```bash
+python3 server.py
 ```
 
-For phone access on the same Wi-Fi, open the computer's LAN address, for example:
+It listens on `0.0.0.0:5173`. Find your computer's LAN address:
+
+```bash
+# macOS
+ipconfig getifaddr en0
+# Linux
+hostname -I
+# Windows
+ipconfig
+```
+
+Assuming `192.168.1.20`, open this in Chrome on a phone joined to the same Wi-Fi:
 
 ```text
 http://192.168.1.20:5173
 ```
 
+If it does not load, check that your firewall allows port 5173 (macOS: System Settings → Network → Firewall).
+
 ### Installing on Android
 
-1. Open that address in Chrome (a LAN address works, though HTTPS is more reliable).
-2. Choose **Add to Home screen** from the browser menu, or tap the **安装 / Install** button in the app header.
+1. Open the LAN address in Chrome.
+2. Choose **Add to Home screen** (shown as "Install app" on some versions).
 3. Launch it from the home-screen icon; it runs in a standalone window without browser chrome.
 
-The interface is tuned for phone screens: every control has a tap target of at least 44px, form fields use a 16px font so Android does not zoom on focus, and notch/gesture-bar `safe-area` insets are respected. On narrow screens, **single-page mode** is recommended; switch to **navigation mode** if you prefer switching modules from the navigation bar.
+### Interface adaptation
 
-The Service Worker caches the application shell so the interface still opens offline for data already loaded. API requests always go to the network and never serve stale data.
+Every control has a tap target of at least 44px, form fields use a 16px font so Android does not zoom on focus, and notch/gesture-bar `safe-area` insets are respected. On narrow screens, **single-page mode** is recommended; switch to **navigation mode** if you prefer switching modules from the top bar.
+
+### HTTP and the Service Worker
+
+Android Chrome treats only **HTTPS** and **localhost** as secure contexts. When you open `http://192.168.x.x:5173`:
+
+- All application features work: capture, classification, calendar, overview, reports, and Research Radar.
+- The Service Worker **cannot register**, so there is no offline cache and no full PWA install experience ("Add to Home screen" still works).
+
+For offline caching or a complete install experience, put the server behind HTTPS:
+
+- Cloudflare Tunnel or Tailscale Funnel for quick HTTPS.
+- VPS/NAS + domain + HTTPS reverse proxy (Nginx, Caddy).
+- Tailscale/ZeroTier for private-device-only access.
+
+Note that Research Radar reads brief folders from local disk, so from your phone it analyzes the files on **the computer running `server.py`**.
 
 For long-term mobile use, deploy behind HTTPS. Browser PWA installation and Service Worker behavior are most reliable on HTTPS or localhost.
 

@@ -5387,45 +5387,62 @@ body.screen-mode select {
    the compact desktop sizing.
    --------------------------------------------------------------------------- */
 @media (max-width: 900px) {
-  button,
-  label.import-button,
-  .text-button,
-  .secondary-button,
-  .primary-button,
-  .toolbar-button,
-  .icon-button {
-    min-height: 44px;
+  /* These need `!important`: the older compact rules (.toolbar-button,
+     .text-button, .app-nav button ...) are plain class selectors, and a class
+     (0,1,0) still outranks a `body button` descendant selector (0,0,2). Without
+     the flag the whole mobile touch-target block silently loses the cascade. */
+  body button,
+  body .text-button,
+  body .secondary-button,
+  body .primary-button,
+  body .toolbar-button,
+  body .icon-button,
+  body .danger-button,
+  body .quit-button,
+  body .install-button,
+  body .calendar-nav,
+  body .modal-close,
+  body label.import-button {
+    min-height: 44px !important;
   }
 
-  /* Icon-only controls need the width to match the height. */
-  .toolbar-button.icon-only,
-  .icon-button,
-  .modal-close,
-  .calendar-nav {
-    min-width: 44px;
+  /* Icon-only controls need the width to match the height, and the desktop rule
+     pins a fixed 34px width/height that must be released for phones. */
+  body .toolbar-button.icon-only,
+  body .icon-button,
+  body .modal-close,
+  body .calendar-nav {
+    min-width: 44px !important;
+    height: auto !important;
   }
 
-  input,
-  select,
-  textarea {
-    min-height: 44px;
+  body .top-actions > * {
+    flex: 0 0 auto !important;
+  }
+
+  body input,
+  body select,
+  body textarea {
+    min-height: 44px !important;
     /* 16px prevents Android Chrome from zooming when a field gets focus. */
     font-size: 16px;
   }
 
-  textarea {
-    min-height: 88px;
+  body textarea {
+    min-height: 88px !important;
   }
 
-  .research-tabs button,
-  .item-actions button,
-  .research-card-actions button,
-  .research-maintenance-actions button {
-    min-height: 44px;
+  body .research-tabs button,
+  body .item-actions button,
+  body .research-card-actions button,
+  body .research-maintenance-actions button,
+  body .calendar-day,
+  body .app-nav button {
+    min-height: 44px !important;
   }
 
-  .module-toggle {
-    min-height: 52px;
+  body .module-toggle {
+    min-height: 52px !important;
   }
 }
 
