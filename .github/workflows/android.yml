@@ -96,6 +96,12 @@ jobs:
             echo "::notice::未配置 IDEAAHUB_KEYSTORE_BASE64，release APK 将使用 debug 密钥签名（可直接安装，但不适合上架）。"
           fi
 
+      - name: Set up Gradle
+        # Downloads and caches the Gradle distribution plus build dependencies.
+        # Doing this explicitly avoids relying on the wrapper's own bootstrap,
+        # which is the part most likely to behave differently on a clean runner.
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Build APK
         shell: bash
         env:
@@ -109,19 +115,25 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME"
           java -version 2>&1 | head -2
           echo "ANDROID_HOME=${ANDROID_HOME:-未设置}"
-          test -f local.properties && cat local.properties || echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          echo "--- gradlew 权限 ---"; ls -l gradlew
+          [ -f local.properties ] || echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          echo "--- local.properties ---"; cat local.properties
 
           BUILD_TYPE="${{ github.event.inputs.build_type || 'release' }}"
-          if [ "$BUILD_TYPE" = "debug" ]; then
-            TASK=assembleDebug
-          else
-            TASK=assembleRelease
-          fi
+          if [ "$BUILD_TYPE" = "debug" ]; then TASK=assembleDebug; else TASK=assembleRelease; fi
+          echo "执行任务: $TASK"
 
-          # --stacktrace so a failure is diagnosable from the log alone.
-          if ! ./gradlew --no-daemon --stacktrace "$TASK"; then
-            echo "::error::Gradle 构建失败（$TASK）"
-            exit 1
+          set +e
+          OUTPUT=$(./gradlew --no-daemon --stacktrace "$TASK" 2>&1)
+          STATUS=$?
+          set -e
+          printf '%s\n' "$OUTPUT"
+          if [ $STATUS -ne 0 ]; then
+            echo "=================================================="
+            echo "::error::Gradle 构建失败（$TASK，退出码 $STATUS）"
+            printf '%s\n' "$OUTPUT" | tail -40
+            echo "=================================================="
+            exit $STATUS
           fi
 
       - name: Collect artifacts
