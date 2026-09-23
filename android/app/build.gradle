@@ -4,8 +4,16 @@ apply plugin: 'com.android.application'
 // variables are present (see .github/workflows/android.yml) the release build is
 // signed with a real upload key; otherwise it falls back to the debug key so
 // that a plain `assembleRelease` still produces an installable APK for testing.
-def keystorePath = System.getenv("IDEAAHUB_KEYSTORE_PATH")
-def hasReleaseKeystore = keystorePath != null && file(keystorePath).exists()
+//
+// The path must be checked for emptiness explicitly: an unset CI secret arrives
+// as an empty string, and file("") resolves to the project directory — which
+// exists — so a bare exists() test wrongly enables signing and then fails with
+// "path may not be null or empty string".
+def envKeystorePath = System.getenv("IDEAAHUB_KEYSTORE_PATH")
+def keystorePath = envKeystorePath == null ? "" : envKeystorePath.trim()
+def hasReleaseKeystore = keystorePath.length() > 0 &&
+        (keystorePath.endsWith(".jks") || keystorePath.endsWith(".keystore")) &&
+        file(keystorePath).isFile()
 
 android {
     namespace "local.ideahub.app"
@@ -14,8 +22,8 @@ android {
         applicationId "local.ideahub.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "0.3.7"
+        versionCode 9
+        versionName "0.3.8"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
