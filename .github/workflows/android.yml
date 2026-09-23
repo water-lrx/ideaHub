@@ -81,6 +81,31 @@ jobs:
         # which is the part most likely to behave differently on a clean runner.
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Verify the Gradle toolchain
+        shell: bash
+        working-directory: android
+        # Runs the wrapper with a timeout BEFORE the real build, then reports the
+        # distribution state. If the wrapper cannot bootstrap, this step fails
+        # fast with a precise message instead of a bare exit code.
+        run: |
+          set -uo pipefail
+          echo "JAVA_HOME=${JAVA_HOME:-未设置}"
+          which java || echo "PATH 中没有 java"
+          java -version 2>&1 | head -2 || true
+          echo "--- gradlew 权限 ---"; ls -l gradlew
+          if [ ! -x gradlew ]; then
+            echo "gradlew 没有可执行权限，补上"
+            chmod +x gradlew
+          fi
+          echo "--- wrapper 配置 ---"; cat gradle/wrapper/gradle-wrapper.properties
+          echo "--- 预热 wrapper ---"
+          if ! ./gradlew --version --no-daemon; then
+            echo "::error::Gradle wrapper 无法启动"
+            ls -la ~/.gradle/wrapper/dists 2>/dev/null || true
+            exit 1
+          fi
+          echo "wrapper 可用"
+
       - name: Assemble web bundle and sync into Android project
         shell: bash
         run: |
@@ -124,14 +149,14 @@ jobs:
           echo "执行任务: $TASK"
 
           set +e
-          OUTPUT=$(./gradlew --no-daemon --stacktrace "$TASK" 2>&1)
-          STATUS=$?
+          ./gradlew --no-daemon --stacktrace "$TASK" 2>&1 | tee ../gradle-build.log
+          STATUS=${PIPESTATUS[0]}
           set -e
-          printf '%s\n' "$OUTPUT"
+          echo "Gradle 退出码: $STATUS"
           if [ $STATUS -ne 0 ]; then
             echo "=================================================="
             echo "::error::Gradle 构建失败（$TASK，退出码 $STATUS）"
-            printf '%s\n' "$OUTPUT" | tail -40
+            tail -40 ../gradle-build.log
             echo "=================================================="
             exit $STATUS
           fi
@@ -156,6 +181,14 @@ jobs:
           unzip -l "$APK" | grep -q "classes.dex" \
             || { echo "::error::APK 缺少 classes.dex"; exit 1; }
           echo "APK 内容校验通过"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: gradle-build.log
+          if-no-files-found: warn
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
