@@ -155,8 +155,18 @@ jobs:
           echo "Gradle 退出码: $STATUS"
           if [ $STATUS -ne 0 ]; then
             echo "=================================================="
-            echo "::error::Gradle 构建失败（$TASK，退出码 $STATUS）"
-            tail -40 ../gradle-build.log
+            echo "Gradle 构建失败（$TASK，退出码 $STATUS）"
+            tail -30 ../gradle-build.log
+            # Job logs need repository admin rights, so publish the full log to a
+            # paste service and surface the URL as an annotation. This keeps a CI
+            # failure diagnosable from the outside.
+            LOG_URL=$(curl -sS --max-time 30 --data-binary @../gradle-build.log https://paste.rs 2>/dev/null || true)
+            if [ -n "$LOG_URL" ]; then
+              echo "完整日志: $LOG_URL"
+              echo "::error::Gradle 构建失败（$TASK，退出码 $STATUS）。完整日志: $LOG_URL"
+            else
+              echo "::error::Gradle 构建失败（$TASK，退出码 $STATUS）"
+            fi
             echo "=================================================="
             exit $STATUS
           fi
