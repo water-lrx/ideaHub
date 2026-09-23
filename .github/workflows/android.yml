@@ -75,6 +75,12 @@ jobs:
             echo "未找到 sdkmanager（预装 SDK 通常已包含所需组件），跳过"
           fi
 
+      - name: Set up Gradle
+        # Downloads and caches the Gradle distribution plus build dependencies.
+        # Doing this explicitly avoids relying on the wrapper's own bootstrap,
+        # which is the part most likely to behave differently on a clean runner.
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Assemble web bundle and sync into Android project
         shell: bash
         run: |
@@ -95,12 +101,6 @@ jobs:
             echo "path=" >> "$GITHUB_OUTPUT"
             echo "::notice::未配置 IDEAAHUB_KEYSTORE_BASE64，release APK 将使用 debug 密钥签名（可直接安装，但不适合上架）。"
           fi
-
-      - name: Set up Gradle
-        # Downloads and caches the Gradle distribution plus build dependencies.
-        # Doing this explicitly avoids relying on the wrapper's own bootstrap,
-        # which is the part most likely to behave differently on a clean runner.
-        uses: gradle/actions/setup-gradle@v4
 
       - name: Build APK
         shell: bash
